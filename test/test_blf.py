@@ -102,7 +102,7 @@ def test_data_access(blf):
 
         # Benchmark: Signal retrieval time
         start_time = time.perf_counter_ns()
-        signal_data = blf.get_signal_data(msg_name, signal_name)
+        signal_data = blf[msg_name][signal_name]
         retrieval_time = time.perf_counter_ns() - start_time
 
         print(f"\n  Signal: {signal_name}")
@@ -112,7 +112,7 @@ def test_data_access(blf):
         print(f"    Max: {signal_data.max()}")
         print(f"    Mean: {signal_data.mean():.3f}")
         print(f"    First 5 values: {signal_data[:5]}")
-        print(f"    [BENCHMARK] Retrieval time: {retrieval_time:,} ns ({retrieval_time/1e6:.3f} ms)")
+        print(f"    [BENCHMARK] Retrieval time: {retrieval_time:,} ns ({retrieval_time / 1e6:.3f} ms)")
 
 
 def plot_signal(blf, msg_name="Distance", signal_name="Distance"):
@@ -299,16 +299,16 @@ def compare_with_cantools(blf_file, dbc_files, channel):
         if decoded and msg_name:
             # Initialize message storage
             if msg_name not in messages_data:
-                messages_data[msg_name] = {'Time': []}
+                messages_data[msg_name] = {"Time": []}
 
             # Store timestamp
-            messages_data[msg_name]['Time'].append(msg.timestamp)
+            messages_data[msg_name]["Time"].append(msg.timestamp)
 
             # Store signals (create list if needed for new signals)
             for sig_name, sig_value in decoded.items():
                 if sig_name not in messages_data[msg_name]:
                     # Pad with None for previous messages that didn't have this signal
-                    messages_data[msg_name][sig_name] = [None] * (len(messages_data[msg_name]['Time']) - 1)
+                    messages_data[msg_name][sig_name] = [None] * (len(messages_data[msg_name]["Time"]) - 1)
                 messages_data[msg_name][sig_name].append(sig_value)
 
     print(f"Total CAN messages read: {msg_count}")
@@ -339,17 +339,17 @@ def compare_with_cantools(blf_file, dbc_files, channel):
 
     # Calculate speedup
     speedup = cantools_parse_time / our_parse_time
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"PERFORMANCE SUMMARY:")
     print(f"  cantools + python-can: {cantools_parse_time:.3f} seconds")
     print(f"  blf_python (ours):     {our_parse_time:.3f} seconds")
     print(f"  Speedup:               {speedup:.2f}x faster")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Benchmark signal retrieval
     if messages_data and blf.messages:
         msg_name = list(messages_data.keys())[0]
-        sig_name = [s for s in messages_data[msg_name].keys() if s != 'Time'][0]
+        sig_name = [s for s in messages_data[msg_name].keys() if s != "Time"][0]
 
         # cantools retrieval (already in memory as numpy array)
         start_time = time.perf_counter_ns()
@@ -358,7 +358,7 @@ def compare_with_cantools(blf_file, dbc_files, channel):
 
         # Our implementation retrieval
         start_time = time.perf_counter_ns()
-        _ = blf.get_signal_data(msg_name, sig_name)
+        _ = blf[msg_name][sig_name]
         our_retrieval = time.perf_counter_ns() - start_time
 
         print(f"\nSignal retrieval benchmark ({msg_name}.{sig_name}):")
@@ -366,68 +366,55 @@ def compare_with_cantools(blf_file, dbc_files, channel):
         print(f"  blf_python:   {our_retrieval:,} ns")
 
     # Create consolidated comparison plot
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Creating comparison plot...")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
 
     # Plot Distance.Distance
-    if 'Distance' in messages_data and 'Distance' in messages_data['Distance']:
+    if "Distance" in messages_data and "Distance" in messages_data["Distance"]:
         # Row 1, Col 1: cantools Distance
         ax = axes[0, 0]
-        ax.plot(messages_data['Distance']['Time'], messages_data['Distance']['Distance'],
-                linewidth=0.8, alpha=0.8, color='tab:blue')
+        ax.plot(messages_data["Distance"]["Time"], messages_data["Distance"]["Distance"], linewidth=0.8, alpha=0.8, color="tab:blue")
         ax.set_xlabel("Time (seconds)", fontsize=10)
         ax.set_ylabel("Distance", fontsize=10)
         ax.set_title("Distance.Distance (cantools + python-can)", fontsize=11, fontweight="bold")
         ax.grid(True, alpha=0.3)
-        ax.text(0.02, 0.98, f"Parse time: {cantools_parse_time:.3f}s",
-                transform=ax.transAxes, va='top', fontsize=9,
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        ax.text(0.02, 0.98, f"Parse time: {cantools_parse_time:.3f}s", transform=ax.transAxes, va="top", fontsize=9, bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
 
-    if 'Distance' in blf.data and 'Distance' in blf.data['Distance']:
+    if "Distance" in blf and "Distance" in blf["Distance"]:
         # Row 2, Col 1: ours Distance
         ax = axes[1, 0]
-        ax.plot(blf.data['Distance']['Time'], blf.data['Distance']['Distance'],
-                linewidth=0.8, alpha=0.8, color='tab:orange')
+        ax.plot(blf["Distance"]["Time"], blf["Distance"]["Distance"], linewidth=0.8, alpha=0.8, color="tab:orange")
         ax.set_xlabel("Time (seconds)", fontsize=10)
         ax.set_ylabel("Distance", fontsize=10)
         ax.set_title("Distance.Distance (blf_python - ours)", fontsize=11, fontweight="bold")
         ax.grid(True, alpha=0.3)
-        ax.text(0.02, 0.98, f"Parse time: {our_parse_time:.3f}s",
-                transform=ax.transAxes, va='top', fontsize=9,
-                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5))
+        ax.text(0.02, 0.98, f"Parse time: {our_parse_time:.3f}s", transform=ax.transAxes, va="top", fontsize=9, bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.5))
 
     # Plot AccelVehicle.AccelX
-    if 'AccelVehicle' in messages_data and 'AccelX' in messages_data['AccelVehicle']:
+    if "AccelVehicle" in messages_data and "AccelX" in messages_data["AccelVehicle"]:
         # Row 1, Col 2: cantools AccelX
         ax = axes[0, 1]
-        ax.plot(messages_data['AccelVehicle']['Time'], messages_data['AccelVehicle']['AccelX'],
-                linewidth=0.8, alpha=0.8, color='tab:blue')
+        ax.plot(messages_data["AccelVehicle"]["Time"], messages_data["AccelVehicle"]["AccelX"], linewidth=0.8, alpha=0.8, color="tab:blue")
         ax.set_xlabel("Time (seconds)", fontsize=10)
         ax.set_ylabel("AccelX", fontsize=10)
         ax.set_title("AccelVehicle.AccelX (cantools + python-can)", fontsize=11, fontweight="bold")
         ax.grid(True, alpha=0.3)
-        ax.text(0.02, 0.98, f"Parse time: {cantools_parse_time:.3f}s",
-                transform=ax.transAxes, va='top', fontsize=9,
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        ax.text(0.02, 0.98, f"Parse time: {cantools_parse_time:.3f}s", transform=ax.transAxes, va="top", fontsize=9, bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
 
-    if 'AccelVehicle' in blf.data and 'AccelX' in blf.data['AccelVehicle']:
+    if "AccelVehicle" in blf and "AccelX" in blf["AccelVehicle"]:
         # Row 2, Col 2: ours AccelX
         ax = axes[1, 1]
-        ax.plot(blf.data['AccelVehicle']['Time'], blf.data['AccelVehicle']['AccelX'],
-                linewidth=0.8, alpha=0.8, color='tab:orange')
+        ax.plot(blf["AccelVehicle"]["Time"], blf["AccelVehicle"]["AccelX"], linewidth=0.8, alpha=0.8, color="tab:orange")
         ax.set_xlabel("Time (seconds)", fontsize=10)
         ax.set_ylabel("AccelX", fontsize=10)
         ax.set_title("AccelVehicle.AccelX (blf_python - ours)", fontsize=11, fontweight="bold")
         ax.grid(True, alpha=0.3)
-        ax.text(0.02, 0.98, f"Parse time: {our_parse_time:.3f}s",
-                transform=ax.transAxes, va='top', fontsize=9,
-                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5))
+        ax.text(0.02, 0.98, f"Parse time: {our_parse_time:.3f}s", transform=ax.transAxes, va="top", fontsize=9, bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.5))
 
-    plt.suptitle(f"Performance Comparison: cantools vs blf_python (Speedup: {speedup:.2f}x)",
-                 fontsize=14, fontweight="bold")
+    plt.suptitle(f"Performance Comparison: cantools vs blf_python (Speedup: {speedup:.2f}x)", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
     plot_filename = "comparison_cantools_vs_blf_python.png"
@@ -457,26 +444,11 @@ Examples:
 
   # Filter all channels
   python test_blf.py myfile.blf dbc1.dbc --channel -1
-        """
+        """,
     )
-    parser.add_argument(
-        "blf_file",
-        nargs="?",
-        default="example/AEB_CCRs_10kph_0kph_0%_113833.blf",
-        help="Path to BLF file (default: example/AEB_CCRs_10kph_0kph_0%%_113833.blf)"
-    )
-    parser.add_argument(
-        "dbc_files",
-        nargs="*",
-        default=["example/IMU.dbc"],
-        help="Path(s) to DBC file(s) (default: example/IMU.dbc)"
-    )
-    parser.add_argument(
-        "-c", "--channel",
-        type=int,
-        default=4,
-        help="CAN channel to filter (-1 for all channels, default: 4)"
-    )
+    parser.add_argument("blf_file", nargs="?", default="example/AEB_CCRs_10kph_0kph_0%_113833.blf", help="Path to BLF file (default: example/AEB_CCRs_10kph_0kph_0%%_113833.blf)")
+    parser.add_argument("dbc_files", nargs="*", default=["example/IMU.dbc"], help="Path(s) to DBC file(s) (default: example/IMU.dbc)")
+    parser.add_argument("-c", "--channel", type=int, default=4, help="CAN channel to filter (-1 for all channels, default: 4)")
 
     args = parser.parse_args()
 

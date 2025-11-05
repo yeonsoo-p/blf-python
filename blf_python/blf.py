@@ -8,8 +8,10 @@ Example:
     >>> from blf_python import BLF
     >>> blf = BLF('recording.blf', ['example/IMU.dbc'], channel=1)
     >>> # Access signal data
-    >>> timestamps = blf.data['GpsStatus']['Time']
-    >>> gps_mode = blf.data['GpsStatus']['GpsPosMode']
+    >>> timestamps = blf.get_signal('GpsStatus', 'Time')
+    >>> gps_mode = blf.get_signal('GpsStatus', 'GpsPosMode')
+    >>> # Or use dictionary-style access
+    >>> velocity = blf['Distance']['Distance']
 """
 
 from pathlib import Path
@@ -21,27 +23,49 @@ except ImportError:
     import blf_python as _blf
 
 
+class MessageProxy:
+    """Proxy object for dictionary-style access to signals within a message."""
+
+    def __init__(self, blf_obj, message_name: str):
+        self._blf = blf_obj
+        self._message_name = message_name
+
+    def __getitem__(self, signal_name: str) -> np.ndarray:
+        """Get signal data using dictionary-style access."""
+        return self._blf.get_signal(self._message_name, signal_name)
+
+    def __contains__(self, signal_name: str) -> bool:
+        """Check if a signal exists in this message."""
+        try:
+            signals = self._blf.get_signals(self._message_name)
+            return signal_name in signals
+        except KeyError:
+            return False
+
+    def __repr__(self) -> str:
+        signals = self._blf.get_signals(self._message_name)
+        return f"MessageProxy(message='{self._message_name}', signals={len(signals)})"
+
+
 class BLF:
     """
     BLF file reader with DBC decoding support.
 
     This class reads BLF files and decodes CAN messages using provided DBC database files.
-    The decoded data is stored as NumPy arrays organized by message name and signal name.
+    The decoded data is accessed via zero-copy NumPy arrays.
 
     Attributes:
-        filepath (str): Path to the BLF file
-        dbc_files (List[str]): List of DBC file paths used for decoding
-        channel (int): CAN channel filter (-1 for all channels)
-        data (Dict[str, Dict[str, np.ndarray]]): Decoded message and signal data
-            Structure: data[message_name][signal_name] = numpy_array
-            Special signal 'Time' contains timestamps for each message
+        messages (list[str]): List of all decoded message names
 
     Example:
         >>> blf = BLF('recording.blf', ['vehicle.dbc', 'sensors.dbc'], channel=1)
         >>> print(blf.messages)  # List all decoded messages
         >>> print(blf.get_signals('GpsStatus'))  # List signals in a message
-        >>> timestamps = blf.data['GpsStatus']['Time']
-        >>> gps_mode = blf.data['GpsStatus']['GpsPosMode']
+        >>> # Access signals
+        >>> timestamps = blf.get_signal('GpsStatus', 'Time')
+        >>> gps_mode = blf.get_signal('GpsStatus', 'GpsPosMode')
+        >>> # Or use dictionary-style access
+        >>> velocity = blf['Distance']['Distance']
     """
 
     def __init__(self, filepath: str | Path, dbc_files: list[str | Path], channel: int = -1):
@@ -76,15 +100,13 @@ class BLF:
             if not dbc_file.exists():
                 raise FileNotFoundError(f"DBC file not found: {dbc_file}")
 
-        # Store parameters as strings (for C extension compatibility)
+        # Store parameters
         self.filepath = str(filepath_obj)
         self.dbc_files = [str(f) for f in dbc_files_obj]
         self.channel = channel
 
-        # Read and decode the BLF file
-        self.data: dict[str, dict[str, np.ndarray]] = _blf.read_blf(
-            self.filepath, self.dbc_files, channel
-        )
+        # Create C extension BLF object
+        self._blf = _blf.BLF(self.filepath, self.dbc_files, channel)
 
     @property
     def messages(self) -> list[str]:
@@ -99,7 +121,7 @@ class BLF:
             >>> for msg in blf.messages:
             ...     print(msg)
         """
-        return list(self.data.keys())
+        return self._blf.messages
 
     def get_signals(self, message_name: str) -> list[str]:
         """
@@ -118,10 +140,27 @@ class BLF:
             >>> signals = blf.get_signals('GpsStatus')
             >>> print(signals)  # ['Time', 'GpsNumSats', 'GpsPosMode', ...]
         """
-        if message_name not in self.data:
-            raise KeyError(f"Message '{message_name}' not found. Available messages: {self.messages}")
+        return self._blf.get_signals(message_name)
 
-        return list(self.data[message_name].keys())
+    def get_signal(self, message_name: str, signal_name: str) -> np.ndarray:
+        """
+        Get signal data as zero-copy NumPy array.
+
+        Args:
+            message_name: Name of the message
+            signal_name: Name of the signal
+
+        Returns:
+            NumPy array containing the signal values (zero-copy)
+
+        Raises:
+            KeyError: If message or signal doesn't exist
+
+        Example:
+            >>> gps_mode = blf.get_signal('GpsStatus', 'GpsPosMode')
+            >>> print(gps_mode.shape, gps_mode.dtype)
+        """
+        return self._blf.get_signal(message_name, signal_name)
 
     def get_message_count(self, message_name: str) -> int:
         """
@@ -140,65 +179,7 @@ class BLF:
             >>> count = blf.get_message_count('GpsStatus')
             >>> print(f"Found {count} GpsStatus messages")
         """
-        if message_name not in self.data:
-            raise KeyError(f"Message '{message_name}' not found")
-
-        return len(self.data[message_name]["Time"])
-
-    def __repr__(self) -> str:
-        """String representation of BLF object."""
-        return f"BLF(filepath='{self.filepath}', messages={len(self.messages)}, channel={self.channel})"
-
-    def __str__(self) -> str:
-        """Human-readable string representation."""
-        lines = [f"BLF File: {self.filepath}"]
-        lines.append(f"Channel: {self.channel if self.channel >= 0 else 'All'}")
-        lines.append(f"DBC Files: {', '.join(Path(f).name for f in self.dbc_files)}")
-        lines.append(f"\nMessages ({len(self.messages)}):")
-
-        for msg_name in sorted(self.messages):
-            count = self.get_message_count(msg_name)
-            signal_count = len(self.get_signals(msg_name)) - 1  # Exclude 'Time'
-            lines.append(f"  {msg_name}: {count} samples, {signal_count} signals")
-
-        return "\n".join(lines)
-
-    def info(self) -> None:
-        """
-        Print detailed information about the loaded BLF file.
-
-        Example:
-            >>> blf = BLF('recording.blf', ['vehicle.dbc'])
-            >>> blf.info()
-        """
-        print(str(self))
-
-    def get_signal_data(self, message_name: str, signal_name: str) -> np.ndarray:
-        """
-        Get signal data as NumPy array.
-
-        Args:
-            message_name: Name of the message
-            signal_name: Name of the signal
-
-        Returns:
-            NumPy array containing the signal values
-
-        Raises:
-            KeyError: If message or signal doesn't exist
-
-        Example:
-            >>> gps_mode = blf.get_signal_data('GpsStatus', 'GpsPosMode')
-            >>> print(gps_mode.shape, gps_mode.dtype)
-        """
-        if message_name not in self.data:
-            raise KeyError(f"Message '{message_name}' not found")
-
-        if signal_name not in self.data[message_name]:
-            available = self.get_signals(message_name)
-            raise KeyError(f"Signal '{signal_name}' not found in message '{message_name}'. Available signals: {available}")
-
-        return self.data[message_name][signal_name]
+        return self._blf.get_message_count(message_name)
 
     def get_time_series(self, message_name: str) -> np.ndarray:
         """
@@ -217,4 +198,66 @@ class BLF:
             >>> timestamps = blf.get_time_series('GpsStatus')
             >>> print(f"Duration: {timestamps[-1] - timestamps[0]:.2f} seconds")
         """
-        return self.get_signal_data(message_name, "Time")
+        return self.get_signal(message_name, "Time")
+
+    def __getitem__(self, message_name: str) -> MessageProxy:
+        """
+        Get message proxy for dictionary-style signal access.
+
+        Args:
+            message_name: Name of the message
+
+        Returns:
+            MessageProxy object that supports signal access via []
+
+        Example:
+            >>> velocity = blf['Distance']['Distance']
+            >>> time = blf['GpsStatus']['Time']
+        """
+        return MessageProxy(self._blf, message_name)
+
+    def __contains__(self, message_name: str) -> bool:
+        """
+        Check if a message exists in the BLF file.
+
+        Args:
+            message_name: Name of the message
+
+        Returns:
+            True if message exists, False otherwise
+
+        Example:
+            >>> if 'Distance' in blf:
+            ...     print("Distance message found")
+        """
+        return message_name in self.messages
+
+    def __repr__(self) -> str:
+        """String representation of BLF object."""
+        return f"BLF(filepath='{self.filepath}', messages={len(self.messages)}, channel={self.channel})"
+
+    def __str__(self) -> str:
+        """Human-readable string representation."""
+        lines = [f"BLF File: {self.filepath}"]
+        lines.append(f"Channel: {self.channel if self.channel >= 0 else 'All'}")
+        lines.append(f"DBC Files: {', '.join(Path(f).name for f in self.dbc_files)}")
+        lines.append(f"\nMessages ({len(self.messages)}):")
+
+        for msg_name in sorted(self.messages):
+            signals = self.get_signals(msg_name)
+            time_array = self.get_signal(msg_name, "Time")
+            count = len(time_array)
+            signal_count = len(signals) - 1  # Exclude 'Time'
+            lines.append(f"  {msg_name}: {count} samples, {signal_count} signals")
+
+        return "\n".join(lines)
+
+    def info(self) -> None:
+        """
+        Print detailed information about the loaded BLF file.
+
+        Example:
+            >>> blf = BLF('recording.blf', ['vehicle.dbc'])
+            >>> blf.info()
+        """
+        print(str(self))
