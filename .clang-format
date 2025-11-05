@@ -1,0 +1,22 @@
+IndentWidth: 4
+UseTab: Never
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+SpaceBeforeParens: true
+SpaceBeforeAssignmentOperators: true
+ColumnLimit: 0
+BinPackParameters: true
+BinPackArguments: true
+
+SortIncludes: true
+MaxEmptyLinesToKeep: 2
+BreakAfterReturnType: Automatic
+
+AlignAfterOpenBracket: Align
+AlignOperands: true
+AlignTrailingComments: true
+AlignArrayOfStructures: Right
+AlignConsecutiveAssignments: Consecutive
+AlignConsecutiveBitFields: Consecutive
+AlignConsecutiveDeclarations: Consecutive
+AlignConsecutiveMacros: Consecutive
