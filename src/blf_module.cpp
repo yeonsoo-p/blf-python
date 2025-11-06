@@ -87,11 +87,7 @@ struct MessageChannelKey {
 struct MessageChannelKeyHash {
     std::size_t operator()(const MessageChannelKey& key) const {
         std::size_t seed = 0;
-
-        // 1. Hash the first number (uint32_t) and combine
         hash_combine(seed, key.message_id);
-
-        // 2. Hash the second number (uint16_t) and combine
         hash_combine(seed, key.channel);
 
         return seed;
@@ -100,13 +96,13 @@ struct MessageChannelKeyHash {
 
 // BLF object structure
 typedef struct {
-    PyObject_HEAD
-        std::unordered_map<std::string, MessageData>*                                    messages_data;
-    std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash>* dbc_network_cache;
-    std::vector<Vector::DBC::Network>                                                    networks;         // Store networks to keep Network pointers valid
-    std::vector<int>                                                                     network_channels; // Store which channel each network belongs to
-    int                                                                                  initialized;
-    int                                                                                  parsed;
+    PyObject_HEAD;
+    std::unordered_map<std::string, MessageData>                                        messages_data;
+    std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash> dbc_network_cache;
+    std::vector<Vector::DBC::Network>                                                   networks;         // Store networks to keep Network pointers valid
+    std::vector<int>                                                                    network_channels; // Store which channel each network belongs to
+    int                                                                                 initialized;
+    int                                                                                 parsed;
 } BLFObject;
 
 // Extract raw value from CAN data bytes
@@ -160,16 +156,17 @@ static uint64_t extractRawValue(const uint8_t* data, size_t dataLen, const Vecto
 }
 
 // BLF.__new__
-static PyObject* BLF_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+static PyObject* BLF_new(PyTypeObject* type, PyObject* Py_UNUSED(args), PyObject* Py_UNUSED(kwds)) {
     BLFObject* self;
-    (void)args;
-    (void)kwds;
     self = (BLFObject*)type->tp_alloc(type, 0);
     if (self != NULL) {
-        self->messages_data     = nullptr;
-        self->dbc_network_cache = nullptr;
-        self->initialized       = 0;
-        self->parsed            = 0;
+        // Initialize with placement new for C++ objects
+        new (&self->messages_data) std::unordered_map<std::string, MessageData>();
+        new (&self->dbc_network_cache) std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash>();
+        new (&self->networks) std::vector<Vector::DBC::Network>();
+        new (&self->network_channels) std::vector<int>();
+        self->initialized = 0;
+        self->parsed      = 0;
     }
     return (PyObject*)self;
 }
@@ -235,10 +232,6 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         return -1;
     }
 
-    // Store mapping of channel -> network index for cache building
-    // Special handling: channel -1 means "wildcard" (matches all channels)
-    std::unordered_map<int, size_t> channel_to_network_idx;
-
     // Parse each (channel, dbc_filepath) tuple
     for (Py_ssize_t i = 0; i < numEntries; ++i) {
         PyObject* tuple = PyList_GetItem(channel_dbc_list, i);
@@ -287,15 +280,9 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         }
 
         // Store network and remember which channel it belongs to
-        size_t network_idx = self->networks.size();
         self->networks.push_back(std::move(network));
         self->network_channels.push_back(channel_id); // Track channel for this network
-        channel_to_network_idx[channel_id] = network_idx;
     }
-
-    // Allocate cache for (message_id, channel) -> network lookups
-    // Cache will be populated on-the-fly during BLF reading (first search is always cache miss)
-    self->dbc_network_cache = new std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash>();
 
     // Open BLF file
     BLHANDLE hFile = BLCreateFile(blf_filepath, GENERIC_READ);
@@ -305,11 +292,9 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         return -1;
     }
 
-    // Allocate messages map on heap - owned by this BLF object
-    self->messages_data = new std::unordered_map<std::string, MessageData>();
-    self->initialized   = 1;
+    self->initialized = 1;
 
-    auto& messagesData = *self->messages_data;
+    auto& messagesData = self->messages_data;
 
     // Timing accumulators for loop breakdown (in nanoseconds)
     long long total_measured_iteration_ns = 0;
@@ -444,8 +429,8 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             MessageChannelKey cache_key{msgId, msgChannel};
 
             // Check cache first
-            auto cacheIt = self->dbc_network_cache->find(cache_key);
-            if (cacheIt != self->dbc_network_cache->end()) {
+            auto cacheIt = self->dbc_network_cache.find(cache_key);
+            if (cacheIt != self->dbc_network_cache.end()) {
                 // Cache hit - look up message in the cached network
                 Vector::DBC::Network* cached_network = cacheIt->second;
                 auto                  msgIt          = cached_network->messages.find(msgId);
@@ -468,7 +453,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     if (msgIt != network.messages.end()) {
                         dbcMessage = &msgIt->second;
                         // Cache this lookup for future messages on this channel
-                        (*self->dbc_network_cache)[cache_key] = &network;
+                        self->dbc_network_cache[cache_key] = &network;
                         break;
                     }
                 }
@@ -579,15 +564,11 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 // BLF.__del__
 static void BLF_dealloc(BLFObject* self) {
     if (self->initialized) {
-        if (self->messages_data != nullptr) {
-            delete self->messages_data;
-            self->messages_data = nullptr;
-        }
-        if (self->dbc_network_cache != nullptr) {
-            delete self->dbc_network_cache;
-            self->dbc_network_cache = nullptr;
-        }
-        // networks vector will be automatically destroyed
+        // Explicitly call destructors for C++ objects
+        self->messages_data.~unordered_map();
+        self->dbc_network_cache.~unordered_map();
+        self->networks.~vector();
+        self->network_channels.~vector();
     }
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
@@ -607,8 +588,8 @@ static PyObject* BLF_get_signal(BLFObject* self, PyObject* args) {
     }
 
     // Find message
-    auto msgIt = self->messages_data->find(message_name);
-    if (msgIt == self->messages_data->end()) {
+    auto msgIt = self->messages_data.find(message_name);
+    if (msgIt == self->messages_data.end()) {
         PyErr_Format(PyExc_KeyError, "Message '%s' not found", message_name);
         return NULL;
     }
@@ -671,13 +652,13 @@ static PyObject* BLF_get_messages(BLFObject* self, void* Py_UNUSED(closure)) {
         return NULL;
     }
 
-    PyObject* list = PyList_New(self->messages_data->size());
+    PyObject* list = PyList_New(self->messages_data.size());
     if (list == NULL) {
         return NULL;
     }
 
     size_t i = 0;
-    for (const auto& msgPair : *self->messages_data) {
+    for (const auto& msgPair : self->messages_data) {
         PyObject* name = PyUnicode_FromString(msgPair.first.c_str());
         if (name == NULL) {
             Py_DECREF(list);
@@ -703,8 +684,8 @@ static PyObject* BLF_get_signals(BLFObject* self, PyObject* args) {
     }
 
     // Find message
-    auto msgIt = self->messages_data->find(message_name);
-    if (msgIt == self->messages_data->end()) {
+    auto msgIt = self->messages_data.find(message_name);
+    if (msgIt == self->messages_data.end()) {
         PyErr_Format(PyExc_KeyError, "Message '%s' not found", message_name);
         return NULL;
     }
@@ -748,8 +729,8 @@ static PyObject* BLF_get_message_count(BLFObject* self, PyObject* args) {
     }
 
     // Find message
-    auto msgIt = self->messages_data->find(message_name);
-    if (msgIt == self->messages_data->end()) {
+    auto msgIt = self->messages_data.find(message_name);
+    if (msgIt == self->messages_data.end()) {
         PyErr_Format(PyExc_KeyError, "Message '%s' not found", message_name);
         return NULL;
     }
