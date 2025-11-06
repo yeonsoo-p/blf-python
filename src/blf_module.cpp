@@ -14,41 +14,15 @@
 #include <Python.h>
 #include <numpy/arrayobject.h>
 
-#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <windows.h>
 
 #include "binlog.h"
 #include <Vector/DBC.h>
-
-// Fast timing for Windows
-#ifdef _WIN32
-static LARGE_INTEGER g_frequency;
-static bool          g_frequency_initialized = false;
-
-inline LARGE_INTEGER get_performance_counter() {
-    LARGE_INTEGER counter;
-    QueryPerformanceCounter(&counter);
-    return counter;
-}
-
-inline void init_performance_frequency() {
-    if (!g_frequency_initialized) {
-        QueryPerformanceFrequency(&g_frequency);
-        g_frequency_initialized = true;
-    }
-}
-
-inline long long counter_diff_ns(LARGE_INTEGER start, LARGE_INTEGER end) {
-    return ((end.QuadPart - start.QuadPart) * 1000000000LL) / g_frequency.QuadPart;
-}
-#endif
 
 // Structure to hold signal data during collection
 struct SignalData {
@@ -296,31 +270,11 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 
     auto& messagesData = self->messages_data;
 
-    // Timing accumulators for loop breakdown (in nanoseconds)
-    long long total_measured_iteration_ns = 0;
-    long long peek_read_time_ns           = 0;
-    long long dbc_lookup_time_ns          = 0;
-    long long decode_setup_time_ns        = 0;
-    long long extract_signals_time_ns     = 0;
-    long long timing_overhead_ns          = 0;
-    long long gap_time_ns                 = 0;
-    long long iteration_count             = 0;
-    long long messages_decoded            = 0;
-
     // Read all objects from BLF file
     VBLObjectHeaderBase base;
     int32_t             bSuccess = 1;
 
-    init_performance_frequency();
-    auto loop_start    = get_performance_counter();
-    auto prev_iter_end = loop_start;
-
     while (bSuccess) {
-        iteration_count++;
-        auto iter_start = get_performance_counter();
-        gap_time_ns += counter_diff_ns(prev_iter_end, iter_start);
-
-        auto peek_start = get_performance_counter();
 
         int peekResult = BLPeekObject(hFile, &base);
 
@@ -409,13 +363,8 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             break;
         }
 
-        auto peek_end = get_performance_counter();
-        peek_read_time_ns += counter_diff_ns(peek_start, peek_end);
-
         // Process valid CAN message
         if (validMessage) {
-            auto lookup_start = get_performance_counter();
-            gap_time_ns += counter_diff_ns(peek_end, lookup_start);
 
             // Find matching message in DBC files using cache
             // The cache maps (message_id, channel) -> network
@@ -455,13 +404,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                 }
             }
 
-            auto lookup_end = get_performance_counter();
-            dbc_lookup_time_ns += counter_diff_ns(lookup_start, lookup_end);
-
             if (dbcMessage) {
-                messages_decoded++;
-                auto setup_start = get_performance_counter();
-                gap_time_ns += counter_diff_ns(lookup_end, setup_start);
 
                 // Convert timestamp from nanoseconds to seconds
                 double timestampSec = timestamp / 1e9;
@@ -478,12 +421,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                 // Add timestamp to message
                 msgData_storage.timestamps.push_back(timestampSec);
 
-                auto setup_end = get_performance_counter();
-                decode_setup_time_ns += counter_diff_ns(setup_start, setup_end);
-
                 // Decode all signals
-                auto extract_start = get_performance_counter();
-                gap_time_ns += counter_diff_ns(setup_end, extract_start);
                 for (const auto& sigPair : dbcMessage->signals) {
                     const Vector::DBC::Signal& signal = sigPair.second;
 
@@ -506,53 +444,13 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     }
                     sigData.values.push_back(physicalValue);
                 }
-                auto extract_end = get_performance_counter();
-                extract_signals_time_ns += counter_diff_ns(extract_start, extract_end);
-                total_measured_iteration_ns += counter_diff_ns(iter_start, extract_end);
-                prev_iter_end = extract_end;
-            } else {
-                auto lookup_end2 = get_performance_counter();
-                timing_overhead_ns += counter_diff_ns(lookup_start, lookup_end2);
-                total_measured_iteration_ns += counter_diff_ns(iter_start, lookup_end2);
-                prev_iter_end = lookup_end2;
             }
-        } else {
-            auto overhead_end = get_performance_counter();
-            timing_overhead_ns += counter_diff_ns(peek_end, overhead_end);
-            total_measured_iteration_ns += counter_diff_ns(iter_start, overhead_end);
-            prev_iter_end = overhead_end;
         }
     }
 
     BLCloseHandle(hFile);
 
-    auto loop_end = get_performance_counter();
-
     self->parsed = 1;
-
-    // Calculate total loop time
-    long long total_loop_ns         = counter_diff_ns(loop_start, loop_end);
-    double    total_loop_ms         = total_loop_ns / 1000000.0;
-    double    measured_iteration_ms = total_measured_iteration_ns / 1000000.0;
-    double    unmeasured_ms         = total_loop_ms - measured_iteration_ms;
-
-    double sum_of_components_ms        = (peek_read_time_ns + dbc_lookup_time_ns + decode_setup_time_ns + extract_signals_time_ns + timing_overhead_ns + gap_time_ns) / 1000000.0;
-    double unaccounted_in_iteration_ms = measured_iteration_ms - sum_of_components_ms;
-
-    std::cout << "BLF_init loop timing breakdown:" << std::endl;
-    std::cout << "  Iterations: " << iteration_count << ", Messages decoded: " << messages_decoded << std::endl;
-    std::cout << "  Peek/Read messages:      " << (peek_read_time_ns / 1000000.0) << " ms  (" << (peek_read_time_ns / iteration_count) << " ns/iter)" << std::endl;
-    std::cout << "  DBC lookup:              " << (dbc_lookup_time_ns / 1000000.0) << " ms  (" << (dbc_lookup_time_ns / iteration_count) << " ns/iter)" << std::endl;
-    std::cout << "  Decode setup:            " << (decode_setup_time_ns / 1000000.0) << " ms  (" << (decode_setup_time_ns / iteration_count) << " ns/iter)" << std::endl;
-    std::cout << "  Extract signals:         " << (extract_signals_time_ns / 1000000.0) << " ms  (" << (extract_signals_time_ns / iteration_count) << " ns/iter)" << std::endl;
-    std::cout << "  Other overhead:          " << (timing_overhead_ns / 1000000.0) << " ms  (" << (timing_overhead_ns / iteration_count) << " ns/iter)" << std::endl;
-    std::cout << "  Inter-iteration gaps:    " << (gap_time_ns / 1000000.0) << " ms  (" << (gap_time_ns / iteration_count) << " ns/iter)" << std::endl;
-    std::cout << "  UNKNOWN:                 " << unaccounted_in_iteration_ms << " ms  (" << (unaccounted_in_iteration_ms * 1000000.0 / iteration_count) << " ns/iter)" << std::endl;
-    std::cout << "  ---" << std::endl;
-    std::cout << "  Sum of components:       " << sum_of_components_ms << " ms" << std::endl;
-    std::cout << "  Total iteration time:    " << measured_iteration_ms << " ms" << std::endl;
-    std::cout << "  Loop control overhead:   " << unmeasured_ms << " ms" << std::endl;
-    std::cout << "  Total loop time:         " << total_loop_ms << " ms" << std::endl;
 
     return 0;
 }
