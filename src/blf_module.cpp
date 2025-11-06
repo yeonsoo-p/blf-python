@@ -335,8 +335,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 
         switch (base.mObjectType) {
         case BL_OBJ_TYPE_CAN_MESSAGE: {
-            VBLCANMessage message;
-            memset(&message, 0, sizeof(VBLCANMessage));
+            VBLCANMessage message{};
             message.mHeader.mBase = base;
             bSuccess              = BLReadObjectSecure(hFile, &message.mHeader.mBase, sizeof(VBLCANMessage));
 
@@ -353,8 +352,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         }
 
         case BL_OBJ_TYPE_CAN_MESSAGE2: {
-            VBLCANMessage2 message2;
-            memset(&message2, 0, sizeof(VBLCANMessage2));
+            VBLCANMessage2 message2{};
             message2.mHeader.mBase = base;
             bSuccess               = BLReadObjectSecure(hFile, &message2.mHeader.mBase, sizeof(VBLCANMessage2));
 
@@ -371,8 +369,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         }
 
         case BL_OBJ_TYPE_CAN_FD_MESSAGE: {
-            VBLCANFDMessage fdmessage;
-            memset(&fdmessage, 0, sizeof(VBLCANFDMessage));
+            VBLCANFDMessage fdmessage{};
             fdmessage.mHeader.mBase = base;
             bSuccess                = BLReadObjectSecure(hFile, &fdmessage.mHeader.mBase, sizeof(VBLCANFDMessage));
 
@@ -390,8 +387,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         }
 
         case BL_OBJ_TYPE_CAN_FD_MESSAGE_64: {
-            VBLCANFDMessage64 fdmessage64;
-            memset(&fdmessage64, 0, sizeof(VBLCANFDMessage64));
+            VBLCANFDMessage64 fdmessage64{};
             fdmessage64.mHeader.mBase = base;
             bSuccess                  = BLReadObjectSecure(hFile, &fdmessage64.mHeader.mBase, sizeof(VBLCANFDMessage64));
 
