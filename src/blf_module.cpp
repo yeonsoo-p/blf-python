@@ -30,7 +30,7 @@
 // Fast timing for Windows
 #ifdef _WIN32
 static LARGE_INTEGER g_frequency;
-static bool g_frequency_initialized = false;
+static bool          g_frequency_initialized = false;
 
 inline LARGE_INTEGER get_performance_counter() {
     LARGE_INTEGER counter;
@@ -65,12 +65,48 @@ struct MessageData {
     std::vector<double>                         timestamps;
 };
 
+// The standard-ish hash_combine logic (based on Boost)
+template <class T>
+inline void hash_combine(std::size_t& seed, const T& v) {
+    std::hash<T> hasher;
+    // The magic number is derived from the golden ratio
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+// Helper to create a hash key from message ID and channel
+struct MessageChannelKey {
+    uint32_t message_id;
+    uint16_t channel;
+
+    bool operator==(const MessageChannelKey& other) const {
+        return message_id == other.message_id && channel == other.channel;
+    }
+};
+
+// Hash function for MessageChannelKey
+struct MessageChannelKeyHash {
+    std::size_t operator()(const MessageChannelKey& key) const {
+        std::size_t seed = 0;
+
+        // 1. Hash the first number (uint32_t) and combine
+        hash_combine(seed, key.message_id);
+
+        // 2. Hash the second number (uint16_t) and combine
+        hash_combine(seed, key.channel);
+
+        return seed;
+    }
+};
+
 // BLF object structure
 typedef struct {
     PyObject_HEAD
-        std::unordered_map<std::string, MessageData>* messages_data;
-    int                                               initialized;
-    int                                               parsed;
+        std::unordered_map<std::string, MessageData>*                                    messages_data;
+    std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash>* dbc_network_cache;
+    std::vector<Vector::DBC::Network>                                                    networks;         // Store networks to keep Network pointers valid
+    std::vector<int>                                                                     network_channels; // Store which channel each network belongs to
+    int                                                                                  initialized;
+    int                                                                                  parsed;
 } BLFObject;
 
 // Extract raw value from CAN data bytes
@@ -130,57 +166,115 @@ static PyObject* BLF_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
     (void)kwds;
     self = (BLFObject*)type->tp_alloc(type, 0);
     if (self != NULL) {
-        self->messages_data = nullptr;
-        self->initialized   = 0;
-        self->parsed        = 0;
+        self->messages_data     = nullptr;
+        self->dbc_network_cache = nullptr;
+        self->initialized       = 0;
+        self->parsed            = 0;
     }
     return (PyObject*)self;
 }
 
+// Helper function to convert Python path object (str or Path) to C string
+static const char* get_path_string(PyObject* path_obj) {
+    // If it's already a string, return it directly
+    if (PyUnicode_Check(path_obj)) {
+        return PyUnicode_AsUTF8(path_obj);
+    }
+
+    // If it's a Path object, call __str__() or __fspath__()
+    if (PyObject_HasAttrString(path_obj, "__fspath__")) {
+        PyObject* fspath = PyObject_CallMethod(path_obj, "__fspath__", NULL);
+        if (fspath && PyUnicode_Check(fspath)) {
+            const char* result = PyUnicode_AsUTF8(fspath);
+            Py_DECREF(fspath);
+            return result;
+        }
+        Py_XDECREF(fspath);
+    }
+
+    // Try __str__() as fallback
+    PyObject* str_obj = PyObject_Str(path_obj);
+    if (str_obj && PyUnicode_Check(str_obj)) {
+        const char* result = PyUnicode_AsUTF8(str_obj);
+        Py_DECREF(str_obj);
+        return result;
+    }
+    Py_XDECREF(str_obj);
+
+    return nullptr;
+}
+
 // BLF.__init__
 static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
-    const char* blf_filepath;
-    PyObject*   dbc_filepaths_list;
-    int         channel = -1; // -1 means all channels
+    PyObject* blf_filepath_obj;
+    PyObject* channel_dbc_list;
 
-    static char* kwlist[] = {(char*)"blf_filepath", (char*)"dbc_filepaths", (char*)"channel", NULL};
+    static char* kwlist[] = {(char*)"blf_filepath", (char*)"channel_dbc_list", NULL};
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sO|i", kwlist,
-                                     &blf_filepath, &dbc_filepaths_list, &channel)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO", kwlist,
+                                     &blf_filepath_obj, &channel_dbc_list)) {
         return -1;
     }
 
-    // Convert DBC filepaths list to C++ vector
-    if (!PyList_Check(dbc_filepaths_list)) {
-        PyErr_SetString(PyExc_TypeError, "dbc_filepaths must be a list");
+    // Convert BLF filepath (str or Path)
+    const char* blf_filepath = get_path_string(blf_filepath_obj);
+    if (!blf_filepath) {
+        PyErr_SetString(PyExc_TypeError, "blf_filepath must be a string or Path object");
         return -1;
     }
 
-    std::vector<std::string> dbcFiles;
-    Py_ssize_t               numDbcFiles = PyList_Size(dbc_filepaths_list);
+    // Parse list of (channel, dbc_filepath) tuples
+    if (!PyList_Check(channel_dbc_list)) {
+        PyErr_SetString(PyExc_TypeError, "channel_dbc_list must be a list of (channel, dbc_filepath) tuples");
+        return -1;
+    }
 
-    for (Py_ssize_t i = 0; i < numDbcFiles; ++i) {
-        PyObject* item = PyList_GetItem(dbc_filepaths_list, i);
-        if (!PyUnicode_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "All DBC filepaths must be strings");
+    Py_ssize_t numEntries = PyList_Size(channel_dbc_list);
+    if (numEntries == 0) {
+        PyErr_SetString(PyExc_ValueError, "At least one (channel, dbc_filepath) tuple must be provided");
+        return -1;
+    }
+
+    // Store mapping of channel -> network index for cache building
+    // Special handling: channel -1 means "wildcard" (matches all channels)
+    std::unordered_map<int, size_t> channel_to_network_idx;
+
+    // Parse each (channel, dbc_filepath) tuple
+    for (Py_ssize_t i = 0; i < numEntries; ++i) {
+        PyObject* tuple = PyList_GetItem(channel_dbc_list, i);
+
+        if (!PyTuple_Check(tuple) || PyTuple_Size(tuple) != 2) {
+            PyErr_SetString(PyExc_TypeError, "Each entry must be a (channel, dbc_filepath) tuple");
             return -1;
         }
-        dbcFiles.push_back(PyUnicode_AsUTF8(item));
-    }
 
-    if (dbcFiles.empty()) {
-        PyErr_SetString(PyExc_ValueError, "At least one DBC file must be provided");
-        return -1;
-    }
+        // Extract channel
+        PyObject* channel_obj = PyTuple_GetItem(tuple, 0);
+        if (!PyLong_Check(channel_obj)) {
+            PyErr_SetString(PyExc_TypeError, "Channel must be an integer");
+            return -1;
+        }
+        long channel = PyLong_AsLong(channel_obj);
+        if (channel < -1 || channel > 65535) {
+            PyErr_SetString(PyExc_ValueError, "Channel must be between -1 (wildcard) and 65535");
+            return -1;
+        }
+        int channel_id = static_cast<int>(channel); // Use int to support -1
 
-    // Load all DBC files
-    std::vector<Vector::DBC::Network> networks;
-    for (const auto& dbcFile : dbcFiles) {
+        // Extract DBC filepath (str or Path)
+        PyObject*   dbc_path_obj = PyTuple_GetItem(tuple, 1);
+        const char* dbc_filepath = get_path_string(dbc_path_obj);
+        if (!dbc_filepath) {
+            PyErr_SetString(PyExc_TypeError, "DBC filepath must be a string or Path object");
+            return -1;
+        }
+
+        // Load DBC file
         Vector::DBC::Network network;
-        std::ifstream        ifs(dbcFile);
+        std::ifstream        ifs(dbc_filepath);
 
         if (!ifs.is_open()) {
-            PyErr_Format(PyExc_IOError, "Could not open DBC file: %s", dbcFile.c_str());
+            PyErr_Format(PyExc_IOError, "Could not open DBC file: %s", dbc_filepath);
             return -1;
         }
 
@@ -188,12 +282,20 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         ifs.close();
 
         if (!network.successfullyParsed) {
-            PyErr_Format(PyExc_ValueError, "Failed to parse DBC file: %s", dbcFile.c_str());
+            PyErr_Format(PyExc_ValueError, "Failed to parse DBC file: %s", dbc_filepath);
             return -1;
         }
 
-        networks.push_back(std::move(network));
+        // Store network and remember which channel it belongs to
+        size_t network_idx = self->networks.size();
+        self->networks.push_back(std::move(network));
+        self->network_channels.push_back(channel_id); // Track channel for this network
+        channel_to_network_idx[channel_id] = network_idx;
     }
+
+    // Allocate cache for (message_id, channel) -> network lookups
+    // Cache will be populated on-the-fly during BLF reading (first search is always cache miss)
+    self->dbc_network_cache = new std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash>();
 
     // Open BLF file
     BLHANDLE hFile = BLCreateFile(blf_filepath, GENERIC_READ);
@@ -211,21 +313,21 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 
     // Timing accumulators for loop breakdown (in nanoseconds)
     long long total_measured_iteration_ns = 0;
-    long long peek_read_time_ns = 0;
-    long long dbc_lookup_time_ns = 0;
-    long long decode_setup_time_ns = 0;
-    long long extract_signals_time_ns = 0;
-    long long timing_overhead_ns = 0;
-    long long gap_time_ns = 0;
-    long long iteration_count = 0;
-    long long messages_decoded = 0;
+    long long peek_read_time_ns           = 0;
+    long long dbc_lookup_time_ns          = 0;
+    long long decode_setup_time_ns        = 0;
+    long long extract_signals_time_ns     = 0;
+    long long timing_overhead_ns          = 0;
+    long long gap_time_ns                 = 0;
+    long long iteration_count             = 0;
+    long long messages_decoded            = 0;
 
     // Read all objects from BLF file
     VBLObjectHeaderBase base;
     int32_t             bSuccess = 1;
 
     init_performance_frequency();
-    auto loop_start = get_performance_counter();
+    auto loop_start    = get_performance_counter();
     auto prev_iter_end = loop_start;
 
     while (bSuccess) {
@@ -333,22 +435,42 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         if (validMessage) {
             auto lookup_start = get_performance_counter();
             gap_time_ns += counter_diff_ns(peek_end, lookup_start);
-            // Filter by channel if specified
-            if (channel >= 0 && msgChannel != static_cast<uint16_t>(channel)) {
-                auto lookup_end = get_performance_counter();
-                timing_overhead_ns += counter_diff_ns(lookup_start, lookup_end);
-                total_measured_iteration_ns += counter_diff_ns(iter_start, lookup_end);
-                prev_iter_end = lookup_end;
-                continue;
-            }
 
-            // Find matching message in DBC files
+            // Find matching message in DBC files using cache
+            // The cache maps (message_id, channel) -> network
             const Vector::DBC::Message* dbcMessage = nullptr;
-            for (const auto& network : networks) {
-                auto msgIt = network.messages.find(msgId);
-                if (msgIt != network.messages.end()) {
+
+            // Create cache key
+            MessageChannelKey cache_key{msgId, msgChannel};
+
+            // Check cache first
+            auto cacheIt = self->dbc_network_cache->find(cache_key);
+            if (cacheIt != self->dbc_network_cache->end()) {
+                // Cache hit - look up message in the cached network
+                Vector::DBC::Network* cached_network = cacheIt->second;
+                auto                  msgIt          = cached_network->messages.find(msgId);
+                if (msgIt != cached_network->messages.end()) {
                     dbcMessage = &msgIt->second;
-                    break;
+                }
+            } else {
+                // Cache miss - search all networks and cache the result
+                // Check if message channel matches the network's channel
+                for (size_t i = 0; i < self->networks.size(); ++i) {
+                    auto& network         = self->networks[i];
+                    int   network_channel = self->network_channels[i];
+
+                    // Skip if channel doesn't match (unless network channel is wildcard -1)
+                    if (network_channel != -1 && network_channel != static_cast<int>(msgChannel)) {
+                        continue;
+                    }
+
+                    auto msgIt = network.messages.find(msgId);
+                    if (msgIt != network.messages.end()) {
+                        dbcMessage = &msgIt->second;
+                        // Cache this lookup for future messages on this channel
+                        (*self->dbc_network_cache)[cache_key] = &network;
+                        break;
+                    }
                 }
             }
 
@@ -391,14 +513,16 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     double physicalValue;
                     if (signal.valueType == Vector::DBC::ValueType::Signed) {
                         int64_t signedRaw = static_cast<int64_t>(rawValue);
-                        physicalValue     = signal.rawToPhysicalValue(static_cast<double>(signedRaw));
+                        physicalValue     = static_cast<double>(signedRaw) * signal.factor + signal.offset;
                     } else {
-                        physicalValue = signal.rawToPhysicalValue(static_cast<double>(rawValue));
+                        physicalValue = static_cast<double>(rawValue) * signal.factor + signal.offset;
                     }
 
                     // Store signal value (timestamps are stored in parent MessageData)
                     auto& sigData = msgData_storage.signals[signal.name];
-                    sigData.name  = signal.name;
+                    if (sigData.name.empty()) {
+                        sigData.name = signal.name;
+                    }
                     sigData.values.push_back(physicalValue);
                 }
                 auto extract_end = get_performance_counter();
@@ -426,12 +550,12 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
     self->parsed = 1;
 
     // Calculate total loop time
-    long long total_loop_ns = counter_diff_ns(loop_start, loop_end);
-    double total_loop_ms = total_loop_ns / 1000000.0;
-    double measured_iteration_ms = total_measured_iteration_ns / 1000000.0;
-    double unmeasured_ms = total_loop_ms - measured_iteration_ms;
+    long long total_loop_ns         = counter_diff_ns(loop_start, loop_end);
+    double    total_loop_ms         = total_loop_ns / 1000000.0;
+    double    measured_iteration_ms = total_measured_iteration_ns / 1000000.0;
+    double    unmeasured_ms         = total_loop_ms - measured_iteration_ms;
 
-    double sum_of_components_ms = (peek_read_time_ns + dbc_lookup_time_ns + decode_setup_time_ns + extract_signals_time_ns + timing_overhead_ns + gap_time_ns) / 1000000.0;
+    double sum_of_components_ms        = (peek_read_time_ns + dbc_lookup_time_ns + decode_setup_time_ns + extract_signals_time_ns + timing_overhead_ns + gap_time_ns) / 1000000.0;
     double unaccounted_in_iteration_ms = measured_iteration_ms - sum_of_components_ms;
 
     std::cout << "BLF_init loop timing breakdown:" << std::endl;
@@ -454,9 +578,16 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 
 // BLF.__del__
 static void BLF_dealloc(BLFObject* self) {
-    if (self->initialized && self->messages_data != nullptr) {
-        delete self->messages_data;
-        self->messages_data = nullptr;
+    if (self->initialized) {
+        if (self->messages_data != nullptr) {
+            delete self->messages_data;
+            self->messages_data = nullptr;
+        }
+        if (self->dbc_network_cache != nullptr) {
+            delete self->dbc_network_cache;
+            self->dbc_network_cache = nullptr;
+        }
+        // networks vector will be automatically destroyed
     }
     Py_TYPE(self)->tp_free((PyObject*)self);
 }

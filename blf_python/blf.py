@@ -68,45 +68,65 @@ class BLF:
         >>> velocity = blf['Distance']['Distance']
     """
 
-    def __init__(self, filepath: str | Path, dbc_files: list[str | Path], channel: int = -1):
+    def __init__(self, filepath: str | Path, channel_dbc_list: list[tuple[int, str | Path]]):
         """
         Initialize BLF reader and decode the file.
 
         Args:
             filepath: Path to the BLF file to read (str or Path)
-            dbc_files: List of DBC file paths for message decoding (str or Path)
-            channel: CAN channel to filter (default: -1 for all channels)
+            channel_dbc_list: List of (channel, dbc_filepath) tuples
+                Each tuple specifies which DBC file to use for which CAN channel
 
         Raises:
             FileNotFoundError: If BLF file or any DBC file doesn't exist
-            ValueError: If DBC files list is empty or files cannot be parsed
+            ValueError: If channel_dbc_list is empty or contains invalid entries
             IOError: If BLF file cannot be opened or read
+
+        Example:
+            >>> # Single channel
+            >>> blf = BLF('recording.blf', [(4, 'vehicle.dbc')])
+            >>> # Multiple channels with different DBCs
+            >>> blf = BLF('recording.blf', [(1, 'powertrain.dbc'), (2, 'chassis.dbc')])
 
         Note:
             The BLF file is processed immediately upon instantiation.
-            Multiple DBC files can be provided - the first matching message
-            definition will be used for decoding.
+            Each channel can have its own DBC file for decoding.
         """
         # Convert to Path for validation
         filepath_obj = Path(filepath)
         if not filepath_obj.exists():
             raise FileNotFoundError(f"BLF file not found: {filepath}")
 
-        if not dbc_files:
-            raise ValueError("At least one DBC file must be provided")
+        if not channel_dbc_list:
+            raise ValueError("At least one (channel, dbc_filepath) tuple must be provided")
 
-        dbc_files_obj = [Path(f) for f in dbc_files]
-        for dbc_file in dbc_files_obj:
-            if not dbc_file.exists():
-                raise FileNotFoundError(f"DBC file not found: {dbc_file}")
+        # Validate and convert channel_dbc_list
+        validated_list = []
+        dbc_files_for_display = []
+
+        for entry in channel_dbc_list:
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                raise ValueError("Each entry must be a (channel, dbc_filepath) tuple")
+
+            channel, dbc_path = entry
+
+            if not isinstance(channel, int):
+                raise ValueError("Channel must be an integer")
+
+            dbc_path_obj = Path(dbc_path)
+            if not dbc_path_obj.exists():
+                raise FileNotFoundError(f"DBC file not found: {dbc_path}")
+
+            validated_list.append((channel, dbc_path_obj))
+            dbc_files_for_display.append(str(dbc_path_obj))
 
         # Store parameters
         self.filepath = str(filepath_obj)
-        self.dbc_files = [str(f) for f in dbc_files_obj]
-        self.channel = channel
+        self.dbc_files = dbc_files_for_display
+        self.channel_dbc_list = validated_list
 
         # Create C extension BLF object
-        self._blf = _blf.BLF(self.filepath, self.dbc_files, channel)
+        self._blf = _blf.BLF(filepath_obj, validated_list)
 
     @property
     def messages(self) -> list[str]:
@@ -234,12 +254,14 @@ class BLF:
 
     def __repr__(self) -> str:
         """String representation of BLF object."""
-        return f"BLF(filepath='{self.filepath}', messages={len(self.messages)}, channel={self.channel})"
+        channels = [ch for ch, _ in self.channel_dbc_list]
+        return f"BLF(filepath='{self.filepath}', messages={len(self.messages)}, channels={channels})"
 
     def __str__(self) -> str:
         """Human-readable string representation."""
         lines = [f"BLF File: {self.filepath}"]
-        lines.append(f"Channel: {self.channel if self.channel >= 0 else 'All'}")
+        channels_str = ', '.join(str(ch) for ch, _ in self.channel_dbc_list)
+        lines.append(f"Channels: {channels_str}")
         lines.append(f"DBC Files: {', '.join(Path(f).name for f in self.dbc_files)}")
         lines.append(f"\nMessages ({len(self.messages)}):")
 

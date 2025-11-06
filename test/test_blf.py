@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.absolute()))
 from blf_python import BLF
 
 
-def test_basic_loading(blf_file, dbc_files, channel):
+def test_basic_loading(blf_file, channel_dbc_list):
     """Test basic BLF file loading and data access."""
     print("=" * 60)
     print("Test 1: Basic BLF Loading")
@@ -32,21 +32,23 @@ def test_basic_loading(blf_file, dbc_files, channel):
         print("Please update the blf_file variable with your actual BLF file path.")
         return None
 
-    for dbc_file in dbc_files:
+    for channel, dbc_file in channel_dbc_list:
         if not dbc_file.exists():
             print(f"ERROR: DBC file not found: {dbc_file}")
-            print("Please update the dbc_files variable with your actual DBC file path(s).")
+            print("Please update the channel_dbc_list with valid DBC file paths.")
             return None
 
     try:
         # Load BLF file
         print(f"\nLoading BLF file: {blf_file}")
-        print(f"Using DBC file(s): {', '.join(str(f) for f in dbc_files)}")
-        print(f"Channel filter: {channel if channel >= 0 else 'All'}")
+        channels_str = ', '.join(str(ch) if ch >= 0 else 'All' for ch, _ in channel_dbc_list)
+        dbc_files_str = ', '.join(Path(dbc).name for _, dbc in channel_dbc_list)
+        print(f"Channels: {channels_str}")
+        print(f"DBC file(s): {dbc_files_str}")
 
         # Benchmark: Parsing time
         start_time = time.perf_counter()
-        blf = BLF(blf_file, dbc_files, channel=channel)
+        blf = BLF(blf_file, channel_dbc_list)
         parse_time = time.perf_counter() - start_time
 
         print(f"\n[BENCHMARK] Parsing time: {parse_time:.3f} seconds")
@@ -246,14 +248,14 @@ def plot_multiple_signals(blf, msg_name=None):
     plt.show()
 
 
-def compare_with_cantools(blf_file, dbc_files, channel):
+def compare_with_cantools(blf_file, channel_dbc_list):
     """Compare performance with cantools + python-can."""
     print("\n" + "=" * 60)
     print("Test 5: Performance Comparison with cantools")
     print("=" * 60)
 
-    # Load DBC databases
-    dbc_dbs = [cantools.database.load_file(str(dbc)) for dbc in dbc_files]
+    # Load DBC databases from channel_dbc_list
+    dbc_dbs = [cantools.database.load_file(str(dbc)) for _, dbc in channel_dbc_list]
 
     print("\n[cantools + python-can]")
     print(f"Loading BLF file: {blf_file}")
@@ -331,7 +333,7 @@ def compare_with_cantools(blf_file, dbc_files, channel):
     print(f"Loading BLF file: {blf_file}")
 
     start_time = time.perf_counter()
-    blf = BLF(blf_file, dbc_files, channel=channel)
+    blf = BLF(blf_file, channel_dbc_list)
     our_parse_time = time.perf_counter() - start_time
 
     print(f"[BENCHMARK] Parsing time: {our_parse_time:.3f} seconds")
@@ -427,42 +429,27 @@ def compare_with_cantools(blf_file, dbc_files, channel):
 
 def main():
     """Run all tests."""
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(
-        description="Test BLF Python module with custom files",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Use default files
-  python test_blf.py
+    # Hardcoded test parameters
+    blf_file = Path("example/RT3003_0223.blf")
 
-  # Specify custom BLF and DBC files
-  python test_blf.py myfile.blf dbc1.dbc dbc2.dbc
-
-  # Specify channel
-  python test_blf.py myfile.blf dbc1.dbc --channel 2
-
-  # Filter all channels
-  python test_blf.py myfile.blf dbc1.dbc --channel -1
-        """,
-    )
-    parser.add_argument("blf_file", nargs="?", default="example/AEB_CCRs_10kph_0kph_0%_113833.blf", help="Path to BLF file (default: example/AEB_CCRs_10kph_0kph_0%%_113833.blf)")
-    parser.add_argument("dbc_files", nargs="*", default=["example/IMU.dbc"], help="Path(s) to DBC file(s) (default: example/IMU.dbc)")
-    parser.add_argument("-c", "--channel", type=int, default=4, help="CAN channel to filter (-1 for all channels, default: 4)")
-
-    args = parser.parse_args()
-
-    # Convert to Path objects
-    blf_file = Path(args.blf_file)
-    dbc_files = [Path(dbc) for dbc in args.dbc_files]
-    channel = args.channel
+    # List of (channel, dbc_file) tuples
+    # Each tuple specifies which DBC to use for which channel
+    # Use -1 for wildcard (matches all channels)
+    #
+    # Examples:
+    #   Single channel: [(4, Path("vehicle.dbc"))]
+    #   Multiple channels: [(1, Path("powertrain.dbc")), (2, Path("chassis.dbc"))]
+    #   Wildcard: [(-1, Path("all_messages.dbc"))]
+    channel_dbc_list = [
+        (-1, Path("example/RT3003_240223dbc.dbc")),
+    ]
 
     print("\n" + "=" * 60)
     print("BLF Python Module Test Suite")
     print("=" * 60)
 
     # Test 1: Load BLF file
-    blf = test_basic_loading(blf_file, dbc_files, channel)
+    blf = test_basic_loading(blf_file, channel_dbc_list)
 
     if blf is None:
         print("\nTests aborted due to loading failure.")
@@ -472,7 +459,7 @@ Examples:
     test_data_access(blf)
 
     # Test 3: Performance comparison with cantools (includes consolidated plot)
-    compare_with_cantools(blf_file, dbc_files, channel)
+    compare_with_cantools(blf_file, channel_dbc_list)
 
     print("\n" + "=" * 60)
     print("All tests completed!")
