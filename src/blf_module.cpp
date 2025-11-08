@@ -9,75 +9,15 @@
 | Platform: Windows (MinGW GCC/G++)
  ----------------------------------------------------------------------------*/
 
-#define PY_SSIZE_T_CLEAN
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include <Python.h>
-#include <numpy/arrayobject.h>
 
-#include <cstdint>
+// Standard library includes
 #include <cstring>
 #include <fstream>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
+// External library includes
 #include "binlog.h"
-#include <Vector/DBC.h>
+#include "blf_module.h"
 
-// Structure to hold signal data during collection
-struct SignalData {
-    std::string         name;
-    std::vector<double> values;
-    // Note: timestamps are stored in parent MessageData to avoid duplication
-};
-
-// Structure to hold message data
-struct MessageData {
-    std::string                                 name;
-    uint32_t                                    id;
-    std::unordered_map<std::string, SignalData> signals;
-    std::vector<double>                         timestamps;
-};
-
-// The standard-ish hash_combine logic (based on Boost)
-template <class T>
-inline void hash_combine(std::size_t& seed, const T& v) {
-    std::hash<T> hasher;
-    // The magic number is derived from the golden ratio
-    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-// Helper to create a hash key from message ID and channel
-struct MessageChannelKey {
-    uint32_t message_id;
-    uint16_t channel;
-
-    bool operator==(const MessageChannelKey& other) const {
-        return message_id == other.message_id && channel == other.channel;
-    }
-};
-
-// Hash function for MessageChannelKey
-struct MessageChannelKeyHash {
-    std::size_t operator()(const MessageChannelKey& key) const {
-        std::size_t seed = 0;
-        hash_combine(seed, key.message_id);
-        hash_combine(seed, key.channel);
-
-        return seed;
-    }
-};
-
-// BLF object structure
-typedef struct {
-    PyObject_HEAD;
-    std::unordered_map<std::string, MessageData>                                        messages_data;
-    std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash> dbc_network_cache;
-    std::vector<Vector::DBC::Network>                                                   networks;         // Store networks to keep Network pointers valid
-    std::vector<int>                                                                    network_channels; // Store which channel each network belongs to
-    int                                                                                 initialized;
-    int                                                                                 parsed;
-} BLFObject;
 
 // Extract raw value from CAN data bytes
 static uint64_t extractRawValue(const uint8_t* data, size_t dataLen, const Vector::DBC::Signal& signal) {
@@ -268,7 +208,8 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 
     self->initialized = 1;
 
-    auto& messagesData = self->messages_data;
+    // Use temporary structure during collection
+    std::unordered_map<std::string, TempMessageData> tempMessagesData;
 
     // Read all objects from BLF file
     VBLObjectHeaderBase base;
@@ -411,7 +352,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 
                 // Get or create message data storage
                 std::string msgName         = dbcMessage->name;
-                auto&       msgData_storage = messagesData[msgName];
+                auto&       msgData_storage = tempMessagesData[msgName];
 
                 if (msgData_storage.name.empty()) {
                     msgData_storage.name = msgName;
@@ -428,7 +369,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     // Extract raw value
                     uint64_t rawValue = extractRawValue(msgData, msgDlc, signal);
 
-                    // Convert to physical value
+                    // Apply scaling immediately during init
                     double physicalValue;
                     if (signal.valueType == Vector::DBC::ValueType::Signed) {
                         int64_t signedRaw = static_cast<int64_t>(rawValue);
@@ -437,10 +378,19 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                         physicalValue = static_cast<double>(rawValue) * signal.factor + signal.offset;
                     }
 
-                    // Store signal value (timestamps are stored in parent MessageData)
+                    // Store scaled physical value
                     auto& sigData = msgData_storage.signals[signal.name];
                     if (sigData.name.empty()) {
                         sigData.name = signal.name;
+
+                        // Store metadata on first occurrence
+                        SignalMetadata& metadata = msgData_storage.signal_metadata[signal.name];
+                        metadata.name            = signal.name;
+                        metadata.unit            = signal.unit;
+                        metadata.factor          = signal.factor;
+                        metadata.offset          = signal.offset;
+                        metadata.is_signed       = (signal.valueType == Vector::DBC::ValueType::Signed);
+                        metadata.bit_size        = signal.bitSize;
                     }
                     sigData.values.push_back(physicalValue);
                 }
@@ -449,6 +399,66 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
     }
 
     BLCloseHandle(hFile);
+
+    // Convert temporary data to consolidated 2D arrays with scaled values
+    for (auto& tempPair : tempMessagesData) {
+        const std::string&     msgName  = tempPair.first;
+        const TempMessageData& tempMsg  = tempPair.second;
+        MessageData&           finalMsg = self->messages_data[msgName];
+
+        finalMsg.name        = tempMsg.name;
+        finalMsg.id          = tempMsg.id;
+        finalMsg.num_samples = tempMsg.timestamps.size();
+        finalMsg.num_signals = tempMsg.signals.size() + 1; // +1 for Time
+
+        // Copy signal metadata
+        finalMsg.signal_metadata = tempMsg.signal_metadata;
+
+        // Build ordered signal names list (for consistent column indexing)
+        // Column 0 is "Time", followed by other signals
+        finalMsg.signal_names.reserve(finalMsg.num_signals);
+        finalMsg.signal_names.push_back("Time");
+        finalMsg.signal_index_map["Time"] = 0;
+
+        // Add Time signal metadata
+        SignalMetadata& timeMeta = finalMsg.signal_metadata["Time"];
+        timeMeta.name            = "Time";
+        timeMeta.unit            = "s";
+        timeMeta.factor          = 1.0;
+        timeMeta.offset          = 0.0;
+        timeMeta.is_signed       = false;
+        timeMeta.bit_size        = 64;
+
+        // Add other signals and build index map
+        size_t col_idx = 1;
+        for (const auto& sigPair : tempMsg.signals) {
+            finalMsg.signal_names.push_back(sigPair.first);
+            finalMsg.signal_index_map[sigPair.first] = col_idx++;
+        }
+
+        // Allocate consolidated 2D data array: [num_samples * num_signals]
+        // Includes Time in column 0
+        finalMsg.data.resize(finalMsg.num_samples * finalMsg.num_signals);
+
+        // Fill data row by row (row-major order)
+        for (size_t row = 0; row < finalMsg.num_samples; ++row) {
+            size_t row_offset = row * finalMsg.num_signals;
+
+            // Column 0: Time
+            finalMsg.data[row_offset + 0] = tempMsg.timestamps[row];
+
+            // Columns 1+: Other signals (in order of signal_names)
+            for (size_t col = 1; col < finalMsg.num_signals; ++col) {
+                const std::string& sigName = finalMsg.signal_names[col];
+                auto               sigIt   = tempMsg.signals.find(sigName);
+                if (sigIt != tempMsg.signals.end()) {
+                    finalMsg.data[row_offset + col] = sigIt->second.values[row];
+                } else {
+                    finalMsg.data[row_offset + col] = 0.0; // Shouldn't happen
+                }
+            }
+        }
+    }
 
     self->parsed = 1;
 
@@ -468,62 +478,35 @@ static void BLF_dealloc(BLFObject* self) {
 }
 
 // BLF.get_signal(message_name, signal_name) -> numpy array
-static PyObject* BLF_get_signal(BLFObject* self, PyObject* args) {
+BLF_FASTCALL(BLF_get_signal) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(2);
+
     const char* message_name;
     const char* signal_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+    BLF_GET_STRING_ARG(signal_name, 1);
 
-    if (!self->parsed) {
-        PyErr_SetString(PyExc_RuntimeError, "BLF file not loaded");
-        return NULL;
-    }
+    BLF_FIND_MESSAGE(msgData, message_name);
 
-    if (!PyArg_ParseTuple(args, "ss", &message_name, &signal_name)) {
-        return NULL;
-    }
-
-    // Find message
-    auto msgIt = self->messages_data.find(message_name);
-    if (msgIt == self->messages_data.end()) {
-        PyErr_Format(PyExc_KeyError, "Message '%s' not found", message_name);
-        return NULL;
-    }
-
-    const MessageData& msgData = msgIt->second;
-
-    // Handle "Time" signal specially
-    if (strcmp(signal_name, "Time") == 0) {
-        npy_intp  dims[1] = {static_cast<npy_intp>(msgData.timestamps.size())};
-        PyObject* array   = PyArray_SimpleNewFromData(1, dims, NPY_DOUBLE,
-                                                      const_cast<double*>(msgData.timestamps.data()));
-        if (array == NULL) {
-            return NULL;
-        }
-
-        // Set base object to keep BLF object alive
-        Py_INCREF(self);
-        if (PyArray_SetBaseObject((PyArrayObject*)array, (PyObject*)self) < 0) {
-            Py_DECREF(self);
-            Py_DECREF(array);
-            return NULL;
-        }
-
-        return array;
-    }
-
-    // Find signal
-    auto sigIt = msgData.signals.find(signal_name);
-    if (sigIt == msgData.signals.end()) {
+    // Find signal column index (works for all signals including "Time")
+    int col_idx = msgData.get_signal_index(signal_name);
+    if (col_idx < 0) {
         PyErr_Format(PyExc_KeyError, "Signal '%s' not found in message '%s'",
                      signal_name, message_name);
         return NULL;
     }
 
-    const SignalData& sigData = sigIt->second;
+    // Create zero-copy strided view of the signal column
+    // Data layout: row-major 2D array [num_samples x num_signals]
+    // Time is at column 0, other signals at columns 1+
+    // We want column col_idx, which has stride = num_signals * sizeof(double)
+    npy_intp dims[1]    = {static_cast<npy_intp>(msgData.num_samples)};
+    npy_intp strides[1] = {static_cast<npy_intp>(msgData.num_signals * sizeof(double))};
 
-    // Create NumPy array wrapping vector data (zero-copy)
-    npy_intp  dims[1] = {static_cast<npy_intp>(sigData.values.size())};
-    PyObject* array   = PyArray_SimpleNewFromData(1, dims, NPY_DOUBLE,
-                                                  const_cast<double*>(sigData.values.data()));
+    PyObject* array = PyArray_New(&PyArray_Type, 1, dims, NPY_DOUBLE, strides,
+                                  const_cast<double*>(&msgData.data[col_idx]),
+                                  sizeof(double), NPY_ARRAY_WRITEABLE, NULL);
     if (array == NULL) {
         return NULL;
     }
@@ -539,17 +522,12 @@ static PyObject* BLF_get_signal(BLFObject* self, PyObject* args) {
     return array;
 }
 
-// BLF.messages property
-static PyObject* BLF_get_messages(BLFObject* self, void* Py_UNUSED(closure)) {
-    if (!self->parsed) {
-        PyErr_SetString(PyExc_RuntimeError, "BLF file not loaded");
-        return NULL;
-    }
+// BLF.get_message_names() -> list[str]
+BLF_NOARGS(BLF_get_message_names) {
+    BLF_CHECK_PARSED;
 
-    PyObject* list = PyList_New(self->messages_data.size());
-    if (list == NULL) {
-        return NULL;
-    }
+    PyObject* list;
+    BLF_NEW_LIST(list, self->messages_data.size());
 
     size_t i = 0;
     for (const auto& msgPair : self->messages_data) {
@@ -565,90 +543,283 @@ static PyObject* BLF_get_messages(BLFObject* self, void* Py_UNUSED(closure)) {
 }
 
 // BLF.get_signals(message_name) -> list
-static PyObject* BLF_get_signals(BLFObject* self, PyObject* args) {
+BLF_FASTCALL(BLF_get_signals) {
+    PyObject* list;
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(1);
+
     const char* message_name;
+    BLF_GET_STRING_ARG(message_name, 0);
 
-    if (!self->parsed) {
-        PyErr_SetString(PyExc_RuntimeError, "BLF file not loaded");
-        return NULL;
-    }
+    BLF_FIND_MESSAGE(msgData, message_name);
 
-    if (!PyArg_ParseTuple(args, "s", &message_name)) {
-        return NULL;
-    }
+    // signal_names now includes "Time" at index 0, so just return it directly
+    BLF_NEW_LIST(list, msgData.signal_names.size());
 
-    // Find message
-    auto msgIt = self->messages_data.find(message_name);
-    if (msgIt == self->messages_data.end()) {
-        PyErr_Format(PyExc_KeyError, "Message '%s' not found", message_name);
-        return NULL;
-    }
-
-    const MessageData& msgData = msgIt->second;
-
-    // Create list with "Time" + all signal names
-    PyObject* list = PyList_New(msgData.signals.size() + 1);
-    if (list == NULL) {
-        return NULL;
-    }
-
-    // Add "Time" first
-    PyList_SET_ITEM(list, 0, PyUnicode_FromString("Time"));
-
-    // Add all signal names
-    size_t i = 1;
-    for (const auto& sigPair : msgData.signals) {
-        PyObject* name = PyUnicode_FromString(sigPair.first.c_str());
+    for (size_t i = 0; i < msgData.signal_names.size(); ++i) {
+        PyObject* name = PyUnicode_FromString(msgData.signal_names[i].c_str());
         if (name == NULL) {
             Py_DECREF(list);
             return NULL;
         }
-        PyList_SET_ITEM(list, i++, name);
+        PyList_SET_ITEM(list, i, name);
     }
 
     return list;
 }
 
 // BLF.get_message_count(message_name) -> int
-static PyObject* BLF_get_message_count(BLFObject* self, PyObject* args) {
+BLF_FASTCALL(BLF_get_message_count) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(1);
+
     const char* message_name;
+    BLF_GET_STRING_ARG(message_name, 0);
 
-    if (!self->parsed) {
-        PyErr_SetString(PyExc_RuntimeError, "BLF file not loaded");
-        return NULL;
-    }
-
-    if (!PyArg_ParseTuple(args, "s", &message_name)) {
-        return NULL;
-    }
-
-    // Find message
-    auto msgIt = self->messages_data.find(message_name);
-    if (msgIt == self->messages_data.end()) {
-        PyErr_Format(PyExc_KeyError, "Message '%s' not found", message_name);
-        return NULL;
-    }
-
-    const MessageData& msgData = msgIt->second;
-    return PyLong_FromSize_t(msgData.timestamps.size());
+    BLF_FIND_MESSAGE(msgData, message_name);
+    return PyLong_FromSize_t(msgData.num_samples);
 }
 
-// Method definitions
-static PyMethodDef BLF_methods[] = {
-    {       "get_signal",        (PyCFunction)BLF_get_signal, METH_VARARGS,
-     "Get signal data by message and signal name as numpy array"                },
-    {      "get_signals",       (PyCFunction)BLF_get_signals, METH_VARARGS,
-     "Get list of signal names for a message"                                   },
-    {"get_message_count", (PyCFunction)BLF_get_message_count, METH_VARARGS,
-     "Get number of samples for a message"                                      },
-    {               NULL,                               NULL,            0, NULL}
-};
+// BLF.get_signal_units(message_name) -> dict[str, str]
+BLF_FASTCALL(BLF_get_signal_units) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(1);
 
-// Property definitions
-static PyGetSetDef BLF_getsetters[] = {
-    {"messages", (getter)BLF_get_messages, NULL,
-     "List of all message names", NULL                     },
-    {      NULL,                     NULL, NULL, NULL, NULL}
+    const char* message_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    PyObject* dict = PyDict_New();
+    if (dict == NULL) {
+        return NULL;
+    }
+
+    for (const auto& metaPair : msgData.signal_metadata) {
+        PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
+        PyObject* val = PyUnicode_FromString(metaPair.second.unit.c_str());
+
+        if (key == NULL || val == NULL) {
+            Py_XDECREF(key);
+            Py_XDECREF(val);
+            Py_DECREF(dict);
+            return NULL;
+        }
+
+        if (PyDict_SetItem(dict, key, val) < 0) {
+            Py_DECREF(key);
+            Py_DECREF(val);
+            Py_DECREF(dict);
+            return NULL;
+        }
+
+        Py_DECREF(key);
+        Py_DECREF(val);
+    }
+
+    return dict;
+}
+
+// BLF.get_signal_unit(message_name, signal_name) -> str
+BLF_FASTCALL(BLF_get_signal_unit) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(2);
+
+    const char* message_name;
+    const char* signal_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+    BLF_GET_STRING_ARG(signal_name, 1);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    auto metaIt = msgData.signal_metadata.find(signal_name);
+    if (metaIt == msgData.signal_metadata.end()) {
+        PyErr_Format(PyExc_KeyError, "Signal '%s' not found", signal_name);
+        return NULL;
+    }
+
+    return PyUnicode_FromString(metaIt->second.unit.c_str());
+}
+
+// BLF.get_signal_factors(message_name) -> dict[str, float]
+BLF_FASTCALL(BLF_get_signal_factors) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(1);
+
+    const char* message_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    PyObject* dict = PyDict_New();
+    if (dict == NULL) {
+        return NULL;
+    }
+
+    for (const auto& metaPair : msgData.signal_metadata) {
+        PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
+        PyObject* val = PyFloat_FromDouble(metaPair.second.factor);
+
+        if (key == NULL || val == NULL) {
+            Py_XDECREF(key);
+            Py_XDECREF(val);
+            Py_DECREF(dict);
+            return NULL;
+        }
+
+        if (PyDict_SetItem(dict, key, val) < 0) {
+            Py_DECREF(key);
+            Py_DECREF(val);
+            Py_DECREF(dict);
+            return NULL;
+        }
+
+        Py_DECREF(key);
+        Py_DECREF(val);
+    }
+
+    return dict;
+}
+
+// BLF.get_signal_factor(message_name, signal_name) -> float
+BLF_FASTCALL(BLF_get_signal_factor) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(2);
+
+    const char* message_name;
+    const char* signal_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+    BLF_GET_STRING_ARG(signal_name, 1);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    auto metaIt = msgData.signal_metadata.find(signal_name);
+    if (metaIt == msgData.signal_metadata.end()) {
+        PyErr_Format(PyExc_KeyError, "Signal '%s' not found", signal_name);
+        return NULL;
+    }
+
+    return PyFloat_FromDouble(metaIt->second.factor);
+}
+
+// BLF.get_signal_offsets(message_name) -> dict[str, float]
+BLF_FASTCALL(BLF_get_signal_offsets) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(1);
+
+    const char* message_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    PyObject* dict = PyDict_New();
+    if (dict == NULL) {
+        return NULL;
+    }
+
+    for (const auto& metaPair : msgData.signal_metadata) {
+        PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
+        PyObject* val = PyFloat_FromDouble(metaPair.second.offset);
+
+        if (key == NULL || val == NULL) {
+            Py_XDECREF(key);
+            Py_XDECREF(val);
+            Py_DECREF(dict);
+            return NULL;
+        }
+
+        if (PyDict_SetItem(dict, key, val) < 0) {
+            Py_DECREF(key);
+            Py_DECREF(val);
+            Py_DECREF(dict);
+            return NULL;
+        }
+
+        Py_DECREF(key);
+        Py_DECREF(val);
+    }
+
+    return dict;
+}
+
+// BLF.get_signal_offset(message_name, signal_name) -> float
+BLF_FASTCALL(BLF_get_signal_offset) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(2);
+
+    const char* message_name;
+    const char* signal_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+    BLF_GET_STRING_ARG(signal_name, 1);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    auto metaIt = msgData.signal_metadata.find(signal_name);
+    if (metaIt == msgData.signal_metadata.end()) {
+        PyErr_Format(PyExc_KeyError, "Signal '%s' not found", signal_name);
+        return NULL;
+    }
+
+    return PyFloat_FromDouble(metaIt->second.offset);
+}
+
+// BLF.get_message_data(message_name) -> 2D numpy array
+BLF_FASTCALL(BLF_get_message_data) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(1);
+
+    const char* message_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    // Return zero-copy 2D view of the data array
+    // Data layout: [num_samples x num_signals] where column 0 is Time
+    npy_intp dims[2] = {
+        static_cast<npy_intp>(msgData.num_samples),
+        static_cast<npy_intp>(msgData.num_signals)};
+
+    PyObject* array = PyArray_SimpleNewFromData(2, dims, NPY_DOUBLE,
+                                                const_cast<double*>(msgData.data.data()));
+    if (array == NULL) {
+        return NULL;
+    }
+
+    // Set base object to keep BLF object alive
+    Py_INCREF(self);
+    if (PyArray_SetBaseObject((PyArrayObject*)array, (PyObject*)self) < 0) {
+        Py_DECREF(self);
+        Py_DECREF(array);
+        return NULL;
+    }
+
+    return array;
+}
+
+static PyMethodDef BLF_methods[] = {
+    {   "get_message_names",  (PyCFunction)BLF_get_message_names,     METH_NOARGS,
+     "Get list of all message names"                                             },
+    {         "get_signal",          (PyCFunction)BLF_get_signal, METH_FASTCALL,
+     "Get signal data by message and signal name as numpy array"                 },
+    {        "get_signals",         (PyCFunction)BLF_get_signals, METH_FASTCALL,
+     "Get list of signal names for a message"                                    },
+    {  "get_message_count",   (PyCFunction)BLF_get_message_count, METH_FASTCALL,
+     "Get number of samples for a message"                                       },
+    {   "get_message_data",    (PyCFunction)BLF_get_message_data, METH_FASTCALL,
+     "Get entire message as 2D array (time + all signals)"                       },
+    {   "get_signal_units",    (PyCFunction)BLF_get_signal_units, METH_FASTCALL,
+     "Get all signal units as dictionary"                                        },
+    {    "get_signal_unit",     (PyCFunction)BLF_get_signal_unit, METH_FASTCALL,
+     "Get unit string for a signal"                                              },
+    { "get_signal_factors",  (PyCFunction)BLF_get_signal_factors, METH_FASTCALL,
+     "Get all signal factors as dictionary"                                      },
+    {  "get_signal_factor",   (PyCFunction)BLF_get_signal_factor, METH_FASTCALL,
+     "Get scaling factor for a signal"                                           },
+    { "get_signal_offsets",  (PyCFunction)BLF_get_signal_offsets, METH_FASTCALL,
+     "Get all signal offsets as dictionary"                                      },
+    {  "get_signal_offset",   (PyCFunction)BLF_get_signal_offset, METH_FASTCALL,
+     "Get scaling offset for a signal"                                           },
+    {                 NULL,                                 NULL,             0, NULL}
 };
 
 // Type definition
@@ -681,7 +852,7 @@ static PyTypeObject BLFType = {
     .tp_iternext          = 0,                                           /* tp_iternext */
     .tp_methods           = BLF_methods,                                 /* tp_methods */
     .tp_members           = 0,                                           /* tp_members */
-    .tp_getset            = BLF_getsetters,                              /* tp_getset */
+    .tp_getset            = 0,                                           /* tp_getset */
     .tp_base              = 0,                                           /* tp_base */
     .tp_dict              = 0,                                           /* tp_dict */
     .tp_descr_get         = 0,                                           /* tp_descr_get */

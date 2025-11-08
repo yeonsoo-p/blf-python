@@ -57,27 +57,6 @@ if(WIN32)
     set_target_properties(blf_python PROPERTIES SUFFIX ".pyd")
 endif()
 
-# Add read_blf executable
-add_executable(read_blf
-    test/read_blf.c
-)
-
-# Link binlog import library for read_blf executable
-target_link_libraries(read_blf PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/binlog.dll.a
-)
-
-# Add decode_can executable
-add_executable(decode_can
-    test/decode_can.cpp
-)
-
-# Link Vector_DBC library for decode_can executable
-target_link_libraries(decode_can PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/libVector_DBC.dll.a
-)
-
-
 # Copy required DLLs to blf_python directory for Python module to load
 add_custom_command(TARGET blf_python POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

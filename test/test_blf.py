@@ -606,6 +606,224 @@ def test_data_integrity(blf, cantools_data):
     return len(mismatches) == 0
 
 
+def test_all_blf_methods(blf):
+    """Comprehensive test of all BLF class methods."""
+    if blf is None:
+        return False
+
+    print("\n" + "=" * 60)
+    print("Test 7: Comprehensive API Method Testing")
+    print("=" * 60)
+
+    test_results = []
+
+    try:
+        # Test 1: get_message_names()
+        print("\n[1/20] Testing get_message_names()...")
+        msg_names = blf.get_message_names()
+        assert isinstance(msg_names, list), "Should return list"
+        assert len(msg_names) > 0, "Should have at least one message"
+        assert all(isinstance(name, str) for name in msg_names), "All names should be strings"
+        print(f"  [OK] Found {len(msg_names)} messages")
+        test_results.append(("get_message_names()", True))
+
+        # Test 2: messages property (backward compatibility)
+        print("\n[2/20] Testing messages property...")
+        msg_prop = blf.messages
+        assert msg_names == msg_prop, "Property should match get_message_names()"
+        print(f"  [OK] Property returns same as get_message_names()")
+        test_results.append(("messages property", True))
+
+        # Get a test message for subsequent tests
+        test_msg = msg_names[0]
+
+        # Test 3: get_signals()
+        print(f"\n[3/20] Testing get_signals('{test_msg}')...")
+        signals = blf.get_signals(test_msg)
+        assert isinstance(signals, list), "Should return list"
+        assert "Time" in signals, "Should include Time signal"
+        assert len(signals) >= 1, "Should have at least Time signal"
+        print(f"  [OK] Found {len(signals)} signals: {signals[:5]}{'...' if len(signals) > 5 else ''}")
+        test_results.append(("get_signals()", True))
+
+        # Test 4: get_message_count()
+        print(f"\n[4/20] Testing get_message_count('{test_msg}')...")
+        count = blf.get_message_count(test_msg)
+        assert isinstance(count, int), "Should return int"
+        assert count > 0, "Should have positive count"
+        print(f"  [OK] Message has {count} samples")
+        test_results.append(("get_message_count()", True))
+
+        # Test 5: get_time_series()
+        print(f"\n[5/20] Testing get_time_series('{test_msg}')...")
+        timestamps = blf.get_time_series(test_msg)
+        assert isinstance(timestamps, np.ndarray), "Should return numpy array"
+        assert timestamps.shape[0] == count, "Should match message count"
+        assert timestamps.dtype == np.float64, "Should be float64"
+        print(f"  [OK] Got timestamps array shape={timestamps.shape}, dtype={timestamps.dtype}")
+        test_results.append(("get_time_series()", True))
+
+        # Test 6: get_signal()
+        test_signal = [s for s in signals if s != "Time"][0] if len(signals) > 1 else "Time"
+        print(f"\n[6/20] Testing get_signal('{test_msg}', '{test_signal}')...")
+        signal_data = blf.get_signal(test_msg, test_signal)
+        assert isinstance(signal_data, np.ndarray), "Should return numpy array"
+        assert signal_data.shape[0] == count, "Should match message count"
+        print(f"  [OK] Got signal array shape={signal_data.shape}")
+        test_results.append(("get_signal()", True))
+
+        # Test 7: get_message()
+        print(f"\n[7/20] Testing get_message('{test_msg}')...")
+        msg_data = blf.get_message(test_msg)
+        assert isinstance(msg_data, np.ndarray), "Should return numpy array"
+        assert msg_data.ndim == 2, "Should be 2D array"
+        assert msg_data.shape[0] == count, "Rows should match sample count"
+        assert msg_data.shape[1] == len(signals), "Columns should match signal count"
+        print(f"  [OK] Got 2D array shape={msg_data.shape}")
+        test_results.append(("get_message()", True))
+
+        # Test 8: get_all_messages()
+        print(f"\n[8/20] Testing get_all_messages()...")
+        all_msgs = blf.get_all_messages()
+        assert isinstance(all_msgs, dict), "Should return dict"
+        assert len(all_msgs) == len(msg_names), "Should have all messages"
+        assert all(isinstance(v, np.ndarray) for v in all_msgs.values()), "All values should be arrays"
+        print(f"  [OK] Got {len(all_msgs)} message arrays")
+        test_results.append(("get_all_messages()", True))
+
+        # Test 9: __contains__
+        print(f"\n[9/20] Testing __contains__...")
+        assert test_msg in blf, "Existing message should be in blf"
+        assert "NonExistentMessage" not in blf, "Non-existent message should not be in blf"
+        print(f"  [OK] __contains__ works correctly")
+        test_results.append(("__contains__", True))
+
+        # Test 10: __getitem__ (MessageProxy)
+        print(f"\n[10/20] Testing __getitem__ (MessageProxy)...")
+        proxy = blf[test_msg]
+        assert hasattr(proxy, 'get_signal'), "Should return MessageProxy"
+        assert hasattr(proxy, 'get_signal_names'), "Should have get_signal_names"
+        print(f"  [OK] Got MessageProxy: {proxy}")
+        test_results.append(("__getitem__", True))
+
+        # Test 11: MessageProxy.get_signal()
+        print(f"\n[11/20] Testing MessageProxy.get_signal('{test_signal}')...")
+        proxy_signal = proxy.get_signal(test_signal)
+        assert np.array_equal(proxy_signal, signal_data), "Should match get_signal()"
+        print(f"  [OK] MessageProxy returns same data as BLF.get_signal()")
+        test_results.append(("MessageProxy.get_signal()", True))
+
+        # Test 12: MessageProxy.__getitem__
+        print(f"\n[12/20] Testing MessageProxy['{test_signal}']...")
+        proxy_item = proxy[test_signal]
+        assert np.array_equal(proxy_item, signal_data), "Should match get_signal()"
+        print(f"  [OK] Dictionary-style access works")
+        test_results.append(("MessageProxy.__getitem__", True))
+
+        # Test 13: MessageProxy.__contains__
+        print(f"\n[13/20] Testing MessageProxy.__contains__...")
+        assert test_signal in proxy, "Signal should be in proxy"
+        assert "NonExistentSignal" not in proxy, "Non-existent signal should not be in proxy"
+        print(f"  [OK] MessageProxy.__contains__ works")
+        test_results.append(("MessageProxy.__contains__", True))
+
+        # Test 14: MessageProxy.get_signal_names()
+        print(f"\n[14/20] Testing MessageProxy.get_signal_names()...")
+        proxy_signals = proxy.get_signal_names()
+        assert proxy_signals == signals, "Should match BLF.get_signals()"
+        print(f"  [OK] Got {len(proxy_signals)} signal names")
+        test_results.append(("MessageProxy.get_signal_names()", True))
+
+        # Test 15: MessageProxy.get_signal_units()
+        print(f"\n[15/20] Testing MessageProxy.get_signal_units()...")
+        units = proxy.get_signal_units()
+        assert isinstance(units, dict), "Should return dict"
+        assert len(units) == len(signals), "Should have all signals"
+        print(f"  [OK] Got units for {len(units)} signals")
+        test_results.append(("MessageProxy.get_signal_units()", True))
+
+        # Test 16: MessageProxy.get_signal_unit()
+        print(f"\n[16/20] Testing MessageProxy.get_signal_unit('{test_signal}')...")
+        unit = proxy.get_signal_unit(test_signal)
+        assert isinstance(unit, str), "Should return string"
+        assert unit == units[test_signal], "Should match plural method"
+        print(f"  [OK] Got unit: '{unit}'")
+        test_results.append(("MessageProxy.get_signal_unit()", True))
+
+        # Test 17: MessageProxy.get_signal_factors()
+        print(f"\n[17/20] Testing MessageProxy.get_signal_factors()...")
+        factors = proxy.get_signal_factors()
+        assert isinstance(factors, dict), "Should return dict"
+        assert len(factors) == len(signals), "Should have all signals"
+        print(f"  [OK] Got factors for {len(factors)} signals")
+        test_results.append(("MessageProxy.get_signal_factors()", True))
+
+        # Test 18: MessageProxy.get_signal_factor()
+        print(f"\n[18/20] Testing MessageProxy.get_signal_factor('{test_signal}')...")
+        factor = proxy.get_signal_factor(test_signal)
+        assert isinstance(factor, (int, float)), "Should return number"
+        assert factor == factors[test_signal], "Should match plural method"
+        print(f"  [OK] Got factor: {factor}")
+        test_results.append(("MessageProxy.get_signal_factor()", True))
+
+        # Test 19: MessageProxy.get_signal_offsets()
+        print(f"\n[19/20] Testing MessageProxy.get_signal_offsets()...")
+        offsets = proxy.get_signal_offsets()
+        assert isinstance(offsets, dict), "Should return dict"
+        assert len(offsets) == len(signals), "Should have all signals"
+        print(f"  [OK] Got offsets for {len(offsets)} signals")
+        test_results.append(("MessageProxy.get_signal_offsets()", True))
+
+        # Test 20: MessageProxy.get_signal_offset()
+        print(f"\n[20/20] Testing MessageProxy.get_signal_offset('{test_signal}')...")
+        offset = proxy.get_signal_offset(test_signal)
+        assert isinstance(offset, (int, float)), "Should return number"
+        assert offset == offsets[test_signal], "Should match plural method"
+        print(f"  [OK] Got offset: {offset}")
+        test_results.append(("MessageProxy.get_signal_offset()", True))
+
+        # Test caching
+        print(f"\n[BONUS] Testing caching...")
+        # Call plural methods again - should use cache
+        units2 = proxy.get_signal_units()
+        factors2 = proxy.get_signal_factors()
+        offsets2 = proxy.get_signal_offsets()
+        assert units is units2, "Should return cached dict (same object)"
+        assert factors is factors2, "Should return cached dict (same object)"
+        assert offsets is offsets2, "Should return cached dict (same object)"
+        print(f"  [OK] Caching works (returns same dict objects)")
+        test_results.append(("Caching", True))
+
+    except Exception as e:
+        print(f"\n  [FAIL] Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        test_results.append((f"Test failed", False))
+        return False
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("API Test Summary:")
+    print("=" * 60)
+    passed = sum(1 for _, result in test_results if result)
+    total = len(test_results)
+    print(f"Passed: {passed}/{total}")
+
+    if passed == total:
+        print("\n" + "+" * 60)
+        print("SUCCESS: All API methods work correctly!")
+        print("+" * 60)
+        return True
+    else:
+        print("\n" + "-" * 60)
+        print("FAILURE: Some API methods failed")
+        for name, result in test_results:
+            if not result:
+                print(f"  Failed: {name}")
+        print("-" * 60)
+        return False
+
+
 def main():
     """Run all tests."""
     # Hardcoded test parameters
@@ -643,12 +861,19 @@ def main():
     # Test 4: Data integrity verification
     integrity_passed = test_data_integrity(blf_perf, cantools_data)
 
+    # Test 5: Comprehensive API method testing
+    api_passed = test_all_blf_methods(blf)
+
     print("\n" + "=" * 60)
     print("All tests completed!")
-    if integrity_passed:
+    if integrity_passed and api_passed:
         print("Status: [PASS] ALL TESTS PASSED")
     else:
-        print("Status: [FAIL] DATA INTEGRITY CHECK FAILED")
+        print("Status: [FAIL] SOME TESTS FAILED")
+        if not integrity_passed:
+            print("  - Data integrity check failed")
+        if not api_passed:
+            print("  - API method tests failed")
     print("=" * 60)
 
 
