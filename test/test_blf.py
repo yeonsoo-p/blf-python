@@ -7,20 +7,22 @@ This script demonstrates how to:
 3. Plot signal data using matplotlib
 """
 
+from __future__ import annotations
 import sys
 from pathlib import Path
 import time
-import argparse
+from typing import Any
 import matplotlib.pyplot as plt
 import cantools
 import can
 import numpy as np
+from numpy.typing import NDArray
 
 sys.path.insert(0, str(Path(__file__).parent.parent.absolute()))
 from blf_python import BLF
 
 
-def test_basic_loading(blf_file, channel_dbc_list):
+def test_basic_loading(blf_file: Path, channel_dbc_list: list[tuple[int, Path]]) -> BLF | None:
     """Test basic BLF file loading and data access."""
     print("=" * 60)
     print("Test 1: Basic BLF Loading")
@@ -69,7 +71,7 @@ def test_basic_loading(blf_file, channel_dbc_list):
         return None
 
 
-def test_data_access(blf):
+def test_data_access(blf: BLF | None) -> None:
     """Test accessing message and signal data."""
     if blf is None:
         return
@@ -78,12 +80,12 @@ def test_data_access(blf):
     print("Test 2: Data Access")
     print("=" * 60)
 
-    if not blf.messages:
+    if not blf.get_message_names():
         print("No messages found in BLF file!")
         return
 
     # Show first message details
-    msg_name = blf.messages[0]
+    msg_name = blf.get_message_names()[0]
     print(f"\nExamining message: {msg_name}")
     print(f"  Number of samples: {blf.get_message_count(msg_name)}")
     print(f"  Signals: {blf.get_signals(msg_name)}")
@@ -117,7 +119,7 @@ def test_data_access(blf):
         print(f"    [BENCHMARK] Retrieval time: {retrieval_time:,} ns ({retrieval_time / 1e6:.3f} ms)")
 
 
-def plot_signal(blf, msg_name="Distance", signal_name="Distance"):
+def plot_signal(blf: BLF | None, msg_name: str = "Distance", signal_name: str = "Distance") -> None:
     """Plot a specific signal over time."""
     if blf is None:
         return
@@ -178,7 +180,7 @@ def plot_signal(blf, msg_name="Distance", signal_name="Distance"):
     plt.close()
 
 
-def plot_multiple_signals(blf, msg_name=None):
+def plot_multiple_signals(blf: BLF | None, msg_name: str | None = None) -> None:
     """Plot all signals from a message in subplots."""
     if blf is None:
         return
@@ -245,7 +247,7 @@ def plot_multiple_signals(blf, msg_name=None):
     plt.close()
 
 
-def compare_with_cantools(blf_file, channel_dbc_list):
+def compare_with_cantools(blf_file: Path, channel_dbc_list: list[tuple[int, Path]]) -> tuple[BLF | None, dict[str, Any]]:
     """Compare performance with cantools + python-can."""
     print("\n" + "=" * 60)
     print("Test 5: Performance Comparison with cantools")
@@ -334,7 +336,7 @@ def compare_with_cantools(blf_file, channel_dbc_list):
     our_parse_time = time.perf_counter() - start_time
 
     print(f"[BENCHMARK] Parsing time: {our_parse_time:.3f} seconds")
-    print(f"Messages decoded: {len(blf.messages)}")
+    print(f"Messages decoded: {len(blf.get_message_names())}")
 
     # Calculate speedup
     speedup = cantools_parse_time / our_parse_time
@@ -346,7 +348,7 @@ def compare_with_cantools(blf_file, channel_dbc_list):
     print(f"{'=' * 60}")
 
     # Benchmark signal retrieval
-    if messages_data and blf.messages:
+    if messages_data and blf.get_message_names():
         msg_name = list(messages_data.keys())[0]
         sig_name = [s for s in messages_data[msg_name].keys() if s != "Time"][0]
 
@@ -424,7 +426,7 @@ def compare_with_cantools(blf_file, channel_dbc_list):
     return blf, messages_data
 
 
-def test_data_integrity(blf, cantools_data):
+def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
     """Comprehensive data integrity test comparing blf_python vs cantools."""
     print("\n" + "=" * 60)
     print("Test 6: Data Integrity Verification")
@@ -435,7 +437,7 @@ def test_data_integrity(blf, cantools_data):
         return
 
     print("\nComparing all signals in all messages...")
-    print(f"Messages in blf_python: {len(blf.messages)}")
+    print(f"Messages in blf_python: {len(blf.get_message_names())}")
     print(f"Messages in cantools: {len(cantools_data)}")
 
     # Track statistics
@@ -446,7 +448,7 @@ def test_data_integrity(blf, cantools_data):
     tolerance = 1e-6  # 1 microsecond tolerance for floating point comparison
 
     # Compare each message
-    for msg_name in blf.messages:
+    for msg_name in blf.get_message_names():
         if msg_name not in cantools_data:
             print(f"\nWARNING: Message '{msg_name}' found in blf_python but not in cantools")
             continue
@@ -606,7 +608,7 @@ def test_data_integrity(blf, cantools_data):
     return len(mismatches) == 0
 
 
-def test_all_blf_methods(blf):
+def test_all_blf_methods(blf: BLF | None) -> bool:
     """Comprehensive test of all BLF class methods."""
     if blf is None:
         return False
@@ -629,7 +631,7 @@ def test_all_blf_methods(blf):
 
         # Test 2: messages property (backward compatibility)
         print("\n[2/20] Testing messages property...")
-        msg_prop = blf.messages
+        msg_prop = blf.get_message_names()
         assert msg_names == msg_prop, "Property should match get_message_names()"
         print(f"  [OK] Property returns same as get_message_names()")
         test_results.append(("messages property", True))
@@ -824,7 +826,7 @@ def test_all_blf_methods(blf):
         return False
 
 
-def main():
+def main() -> None:
     """Run all tests."""
     # Hardcoded test parameters
     blf_file = Path("example/RT3003_0223.blf")
