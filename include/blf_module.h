@@ -76,16 +76,33 @@ struct MessageChannelKeyHash {
     } while (0)
 
 // Argument extraction macros
-#define BLF_GET_STRING_ARG(var, index)                                               \
-    do {                                                                             \
-        var = PyUnicode_AsUTF8(args[index]);                                         \
-        if (var == NULL) {                                                           \
-            PyErr_SetString(PyExc_RuntimeError, "Failed to decode string argument"); \
-            return NULL;                                                             \
-        }                                                                            \
+#define BLF_GET_STRING_ARG(var, index)                                                    \
+    do {                                                                                  \
+        PyObject* arg_obj = args[index];                                                  \
+        if (!PyUnicode_Check(arg_obj)) {                                                  \
+            PyErr_Format(PyExc_TypeError,                                                 \
+                "Argument %d must be a string, got %s",                                   \
+                (int)(index),                                                             \
+                Py_TYPE(arg_obj)->tp_name);                                               \
+            return NULL;                                                                  \
+        }                                                                                 \
+        Py_ssize_t size;                                                                  \
+        var = PyUnicode_AsUTF8AndSize(arg_obj, &size);                                    \
+        if (var == NULL) {                                                                \
+            if (!PyErr_Occurred()) {                                                      \
+                PyErr_SetString(PyExc_RuntimeError,                                       \
+                    "Failed to decode string argument (invalid UTF-8 encoding)");         \
+            }                                                                             \
+            return NULL;                                                                  \
+        }                                                                                 \
+        if (strlen(var) != (size_t)size) {                                                \
+            PyErr_SetString(PyExc_ValueError,                                             \
+                "String argument contains embedded null bytes");                          \
+            return NULL;                                                                  \
+        }                                                                                 \
     } while (0)
 
-// Message lookup macro
+// Message lookup macro - raises KeyError if not found
 #define BLF_FIND_MESSAGE(msg_var, msg_name)                               \
     auto msg_var##_it = self->messages_data.find(msg_name);               \
     if (msg_var##_it == self->messages_data.end()) {                      \
@@ -93,6 +110,15 @@ struct MessageChannelKeyHash {
         return NULL;                                                      \
     }                                                                     \
     const MessageData& msg_var = msg_var##_it->second;
+
+// Signal lookup macro - raises KeyError if not found
+#define BLF_FIND_SIGNAL(msg_var, sig_var, sig_name)                       \
+    auto sig_var##_it = msg_var.signal_metadata.find(sig_name);           \
+    if (sig_var##_it == msg_var.signal_metadata.end()) {                  \
+        PyErr_Format(PyExc_KeyError, "Signal '%s' not found", sig_name);  \
+        return NULL;                                                      \
+    }                                                                     \
+    const SignalMetadata& sig_var = sig_var##_it->second;
 
 #define BLF_NEW_LIST(var, size)                                            \
     do {                                                                   \

@@ -853,6 +853,153 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         return False
 
 
+def test_error_handling(blf_file: Path, channel_dbc_list: list[tuple[int, Path]]) -> bool:
+    """Test error handling for invalid inputs."""
+    from blf_python.blf import MessageProxy
+
+    print("\n" + "=" * 60)
+    print("Test 8: Error Handling & Input Validation")
+    print("=" * 60)
+
+    passed = 0
+    total = 0
+
+    # Load BLF for testing
+    blf = BLF(blf_file, channel_dbc_list)
+
+    # Test 1: Type error handling - None as message_name
+    total += 1
+    print("\n[1/7] Testing TypeError for None as message_name...")
+    try:
+        proxy = MessageProxy(blf._blf, None)  # type: ignore
+        print("  [FAIL] Should have raised TypeError for None")
+    except TypeError as e:
+        if "must be str" in str(e):
+            print(f"  [OK] Got expected TypeError: {e}")
+            passed += 1
+        else:
+            print(f"  [FAIL] TypeError but wrong message: {e}")
+    except Exception as e:
+        print(f"  [FAIL] Wrong exception type: {type(e).__name__}: {e}")
+
+    # Test 2: Type error handling - int as message_name
+    total += 1
+    print("\n[2/7] Testing TypeError for int as message_name...")
+    try:
+        proxy = MessageProxy(blf._blf, 12345)  # type: ignore
+        print("  [FAIL] Should have raised TypeError for int")
+    except TypeError as e:
+        if "must be str" in str(e):
+            print(f"  [OK] Got expected TypeError: {e}")
+            passed += 1
+        else:
+            print(f"  [FAIL] TypeError but wrong message: {e}")
+    except Exception as e:
+        print(f"  [FAIL] Wrong exception type: {type(e).__name__}: {e}")
+
+    # Test 3: Type error handling - bytes as message_name
+    total += 1
+    print("\n[3/7] Testing TypeError for bytes as message_name...")
+    try:
+        proxy = MessageProxy(blf._blf, b"GpsStatus")  # type: ignore
+        print("  [FAIL] Should have raised TypeError for bytes")
+    except TypeError as e:
+        if "must be str" in str(e):
+            print(f"  [OK] Got expected TypeError: {e}")
+            passed += 1
+        else:
+            print(f"  [FAIL] TypeError but wrong message: {e}")
+    except Exception as e:
+        print(f"  [FAIL] Wrong exception type: {type(e).__name__}: {e}")
+
+    # Test 4: Null byte handling
+    total += 1
+    print("\n[4/7] Testing ValueError for null bytes in message_name...")
+    try:
+        proxy = MessageProxy(blf._blf, "GpsStatus\x00Invalid")
+        print("  [FAIL] Should have raised ValueError for null bytes")
+    except ValueError as e:
+        if "null bytes" in str(e).lower():
+            print(f"  [OK] Got expected ValueError: {e}")
+            passed += 1
+        else:
+            print(f"  [FAIL] ValueError but wrong message: {e}")
+    except Exception as e:
+        print(f"  [FAIL] Wrong exception type: {type(e).__name__}: {e}")
+
+    # Test 5: Non-existent message raises KeyError
+    total += 1
+    print("\n[5/7] Testing KeyError for non-existent message...")
+    try:
+        proxy = blf["NonExistentMessage"]
+        units = proxy.get_signal_units()
+        print("  [FAIL] Should have raised KeyError for non-existent message")
+    except KeyError as e:
+        if "NonExistentMessage" in str(e) or "not found" in str(e).lower():
+            print(f"  [OK] Got expected KeyError with context: {e}")
+            passed += 1
+        else:
+            print(f"  [FAIL] KeyError but wrong message: {e}")
+    except Exception as e:
+        print(f"  [FAIL] Wrong exception type: {type(e).__name__}: {e}")
+
+    # Test 6: Non-existent signal raises KeyError
+    total += 1
+    print("\n[6/7] Testing KeyError for non-existent signal...")
+    try:
+        messages = blf.get_message_names()
+        if len(messages) > 0:
+            msg_name = messages[0]
+            _ = blf.get_signal(msg_name, "NonExistentSignal")
+            print("  [FAIL] Should have raised KeyError for non-existent signal")
+        else:
+            print("  [SKIP] No messages available for testing")
+            total -= 1
+    except KeyError as e:
+        if "not found" in str(e).lower():
+            print(f"  [OK] Got expected KeyError: {e}")
+            passed += 1
+        else:
+            print(f"  [FAIL] KeyError but wrong message: {e}")
+    except Exception as e:
+        print(f"  [FAIL] Wrong exception type: {type(e).__name__}: {e}")
+
+    # Test 7: Valid inputs still work
+    total += 1
+    print("\n[7/7] Testing that valid inputs still work correctly...")
+    try:
+        messages = blf.get_message_names()
+        if len(messages) > 0:
+            msg_name = messages[0]
+            proxy = blf[msg_name]
+            units = proxy.get_signal_units()
+            _ = proxy.get_signal_factors()
+            _ = proxy.get_signal_offsets()
+            print(f"  [OK] Successfully accessed {len(units)} signals in '{msg_name}'")
+            passed += 1
+        else:
+            print("  [SKIP] No messages available for testing")
+            total -= 1
+    except Exception as e:
+        print(f"  [FAIL] {type(e).__name__}: {e}")
+
+    print("\n" + "=" * 60)
+    print("Error Handling Test Summary:")
+    print("=" * 60)
+    print(f"Passed: {passed}/{total}")
+
+    if passed == total:
+        print("\n" + "+" * 60)
+        print("SUCCESS: All error handling tests passed!")
+        print("+" * 60)
+        return True
+    else:
+        print("\n" + "-" * 60)
+        print(f"FAILED: {total - passed} test(s) failed")
+        print("-" * 60)
+        return False
+
+
 def main() -> None:
     """Run all tests."""
     # Hardcoded test parameters
@@ -893,9 +1040,12 @@ def main() -> None:
     # Test 5: Comprehensive API method testing
     api_passed = test_all_blf_methods(blf)
 
+    # Test 6: Error handling and input validation
+    error_handling_passed = test_error_handling(blf_file, channel_dbc_list)
+
     print("\n" + "=" * 60)
     print("All tests completed!")
-    if integrity_passed and api_passed:
+    if integrity_passed and api_passed and error_handling_passed:
         print("Status: [PASS] ALL TESTS PASSED")
     else:
         print("Status: [FAIL] SOME TESTS FAILED")
@@ -903,6 +1053,8 @@ def main() -> None:
             print("  - Data integrity check failed")
         if not api_passed:
             print("  - API method tests failed")
+        if not error_handling_passed:
+            print("  - Error handling tests failed")
     print("=" * 60)
 
 

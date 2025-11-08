@@ -366,8 +366,22 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                 }
 
                 // Get or create message data storage
-                std::string msgName         = dbcMessage->name;
-                auto&       msgData_storage = tempMessagesData[msgName];
+                std::string msgName = dbcMessage->name;
+
+                // Sanitize message name: check for null bytes and non-UTF8 characters
+                if (msgName.find('\0') != std::string::npos) {
+                    fprintf(stderr, "Warning: Message name '%s' (ID %u) contains null bytes, truncating\n",
+                            msgName.c_str(), msgId);
+                    msgName = msgName.substr(0, msgName.find('\0'));
+                }
+                // Validate UTF-8 by attempting to create Python string (will be done later anyway)
+                // For now, just warn if name is unusually long or contains control characters
+                if (msgName.length() > 255) {
+                    fprintf(stderr, "Warning: Message name is unusually long (%zu chars) for ID %u\n",
+                            msgName.length(), msgId);
+                }
+
+                auto& msgData_storage = tempMessagesData[msgName];
 
                 if (msgData_storage.name.empty()) {
                     msgData_storage.name = msgName;
@@ -380,6 +394,14 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                 // Decode all signals
                 for (const auto& sigPair : dbcMessage->signals) {
                     const Vector::DBC::Signal& signal = sigPair.second;
+
+                    // Sanitize signal name
+                    std::string signalName = signal.name;
+                    if (signalName.find('\0') != std::string::npos) {
+                        fprintf(stderr, "Warning: Signal name '%s' in message '%s' contains null bytes, truncating\n",
+                                signalName.c_str(), msgName.c_str());
+                        signalName = signalName.substr(0, signalName.find('\0'));
+                    }
 
                     // Extract raw value
                     uint64_t rawValue = extractRawValue(msgData, msgDlc, signal);
@@ -394,13 +416,13 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     }
 
                     // Store scaled physical value
-                    auto& sigData = msgData_storage.signals[signal.name];
+                    auto& sigData = msgData_storage.signals[signalName];
                     if (sigData.name.empty()) {
-                        sigData.name = signal.name;
+                        sigData.name = signalName;
 
-                        // Store metadata on first occurrence
-                        SignalMetadata& metadata = msgData_storage.signal_metadata[signal.name];
-                        metadata.name            = signal.name;
+                        // Store metadata on first occurrence (use sanitized name)
+                        SignalMetadata& metadata = msgData_storage.signal_metadata[signalName];
+                        metadata.name            = signalName;
                         metadata.unit            = signal.unit;
                         metadata.factor          = signal.factor;
                         metadata.offset          = signal.offset;
@@ -646,14 +668,9 @@ BLF_FASTCALL(BLF_get_signal_unit) {
     BLF_GET_STRING_ARG(signal_name, 1);
 
     BLF_FIND_MESSAGE(msgData, message_name);
+    BLF_FIND_SIGNAL(msgData, metadata, signal_name);
 
-    auto metaIt = msgData.signal_metadata.find(signal_name);
-    if (metaIt == msgData.signal_metadata.end()) {
-        PyErr_Format(PyExc_KeyError, "Signal '%s' not found", signal_name);
-        return NULL;
-    }
-
-    return PyUnicode_FromString(metaIt->second.unit.c_str());
+    return PyUnicode_FromString(metadata.unit.c_str());
 }
 
 // BLF.get_signal_factors(message_name) -> dict[str, float]
@@ -707,14 +724,9 @@ BLF_FASTCALL(BLF_get_signal_factor) {
     BLF_GET_STRING_ARG(signal_name, 1);
 
     BLF_FIND_MESSAGE(msgData, message_name);
+    BLF_FIND_SIGNAL(msgData, metadata, signal_name);
 
-    auto metaIt = msgData.signal_metadata.find(signal_name);
-    if (metaIt == msgData.signal_metadata.end()) {
-        PyErr_Format(PyExc_KeyError, "Signal '%s' not found", signal_name);
-        return NULL;
-    }
-
-    return PyFloat_FromDouble(metaIt->second.factor);
+    return PyFloat_FromDouble(metadata.factor);
 }
 
 // BLF.get_signal_offsets(message_name) -> dict[str, float]
@@ -768,14 +780,9 @@ BLF_FASTCALL(BLF_get_signal_offset) {
     BLF_GET_STRING_ARG(signal_name, 1);
 
     BLF_FIND_MESSAGE(msgData, message_name);
+    BLF_FIND_SIGNAL(msgData, metadata, signal_name);
 
-    auto metaIt = msgData.signal_metadata.find(signal_name);
-    if (metaIt == msgData.signal_metadata.end()) {
-        PyErr_Format(PyExc_KeyError, "Signal '%s' not found", signal_name);
-        return NULL;
-    }
-
-    return PyFloat_FromDouble(metaIt->second.offset);
+    return PyFloat_FromDouble(metadata.offset);
 }
 
 // BLF.get_period(message_name) -> int

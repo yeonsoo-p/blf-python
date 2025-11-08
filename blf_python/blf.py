@@ -26,6 +26,12 @@ class MessageProxy:
     """Proxy object for dictionary-style access to signals within a message."""
 
     def __init__(self, blf: _blf_c.BLF, message_name: str) -> None:
+        # Validate message_name type early to prevent cryptic C++ errors
+        if not isinstance(message_name, str):
+            raise TypeError(f"message_name must be str, got {type(message_name).__name__}")
+        if '\x00' in message_name:
+            raise ValueError(f"message_name cannot contain null bytes: {message_name!r}")
+
         self._blf: _blf_c.BLF = blf
         self._message_name: str = message_name
         self._cached_data: NDArray[np.float64] | None = None  # Cache for 2D array from get_all_signals()
@@ -64,7 +70,12 @@ class MessageProxy:
     def get_signal_units(self) -> dict[str, str]:
         """Get dictionary of signal name -> unit string."""
         if self._cached_units is None:
-            self._cached_units = self._blf.get_signal_units(self._message_name)
+            try:
+                self._cached_units = self._blf.get_signal_units(self._message_name)
+            except (TypeError, RuntimeError, ValueError) as e:
+                raise type(e)(
+                    f"Failed to get signal units for message '{self._message_name}': {e}"
+                ) from e
         return self._cached_units
 
     def get_signal_unit(self, signal_name: str) -> str:
@@ -77,7 +88,12 @@ class MessageProxy:
     def get_signal_factors(self) -> dict[str, float]:
         """Get dictionary of signal name -> scaling factor."""
         if self._cached_factors is None:
-            self._cached_factors = self._blf.get_signal_factors(self._message_name)
+            try:
+                self._cached_factors = self._blf.get_signal_factors(self._message_name)
+            except (TypeError, RuntimeError, ValueError) as e:
+                raise type(e)(
+                    f"Failed to get signal factors for message '{self._message_name}': {e}"
+                ) from e
         return self._cached_factors
 
     def get_signal_factor(self, signal_name: str) -> float:
@@ -90,7 +106,12 @@ class MessageProxy:
     def get_signal_offsets(self) -> dict[str, float]:
         """Get dictionary of signal name -> scaling offset."""
         if self._cached_offsets is None:
-            self._cached_offsets = self._blf.get_signal_offsets(self._message_name)
+            try:
+                self._cached_offsets = self._blf.get_signal_offsets(self._message_name)
+            except (TypeError, RuntimeError, ValueError) as e:
+                raise type(e)(
+                    f"Failed to get signal offsets for message '{self._message_name}': {e}"
+                ) from e
         return self._cached_offsets
 
     def get_signal_offset(self, signal_name: str) -> float:
