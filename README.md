@@ -10,6 +10,7 @@ A high-performance Python library for reading and decoding BLF (Binary Logging F
 - **Type-safe**: Full type hints for better IDE support
 - **Efficient**: Automatic caching for repeated access
 - **Flexible**: Support for multiple channels and DBC files
+- **Compatible**: Automatic detection of timestamp formats (1ns and 10μs)
 
 ## Installation
 
@@ -134,6 +135,11 @@ print(f"Factor: {factor}")
 offset = blf.get_signal_offset('Distance', 'Distance')
 print(f"Offset: {offset}")
 
+# Get sampling period (two ways)
+period1 = blf.get_period('GpsStatus')  # Method 1: via BLF object
+period2 = blf['GpsStatus'].get_period()  # Method 2: via MessageProxy
+print(f"Sampling period: {period1} ms")
+
 # Get all metadata at once (via MessageProxy)
 proxy = blf['Distance']
 units = proxy.get_signal_units()  # dict[str, str]
@@ -249,6 +255,9 @@ class BLF:
     def get_signal_offset(self, message_name: str, signal_name: str) -> float:
         """Get scaling offset for a signal."""
 
+    def get_period(self, message_name: str) -> int:
+        """Get sampling period for a message in milliseconds."""
+
     # Dictionary-style access
     def __getitem__(self, message_name: str) -> MessageProxy:
         """Get MessageProxy for dictionary-style access."""
@@ -295,6 +304,9 @@ class MessageProxy:
 
     def get_signal_offset(self, signal_name: str) -> float:
         """Get offset for a specific signal."""
+
+    def get_period(self) -> int:
+        """Get sampling period for this message in milliseconds."""
 
     # Dictionary-style access
     def __getitem__(self, signal_name: str) -> NDArray[np.float64]:

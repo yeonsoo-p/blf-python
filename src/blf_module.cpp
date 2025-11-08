@@ -226,6 +226,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         uint8_t  msgDlc       = 0;
         uint8_t  msgData[64]  = {0};
         uint64_t timestamp    = 0;
+        uint32_t objectFlags  = 0;
         bool     validMessage = false;
 
         switch (base.mObjectType) {
@@ -235,11 +236,12 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             bSuccess              = BLReadObjectSecure(hFile, &message.mHeader.mBase, sizeof(VBLCANMessage));
 
             if (bSuccess) {
-                msgId      = message.mID;
-                msgChannel = message.mChannel;
-                msgDlc     = message.mDLC;
+                msgId        = message.mID;
+                msgChannel   = message.mChannel;
+                msgDlc       = message.mDLC;
                 memcpy(msgData, message.mData, (msgDlc < 8) ? msgDlc : 8);
                 timestamp    = message.mHeader.mObjectTimeStamp;
+                objectFlags  = message.mHeader.mObjectFlags;
                 validMessage = true;
                 BLFreeObject(hFile, &message.mHeader.mBase);
             }
@@ -252,11 +254,12 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             bSuccess               = BLReadObjectSecure(hFile, &message2.mHeader.mBase, sizeof(VBLCANMessage2));
 
             if (bSuccess) {
-                msgId      = message2.mID;
-                msgChannel = message2.mChannel;
-                msgDlc     = message2.mDLC;
+                msgId        = message2.mID;
+                msgChannel   = message2.mChannel;
+                msgDlc       = message2.mDLC;
                 memcpy(msgData, message2.mData, (msgDlc < 8) ? msgDlc : 8);
                 timestamp    = message2.mHeader.mObjectTimeStamp;
+                objectFlags  = message2.mHeader.mObjectFlags;
                 validMessage = true;
                 BLFreeObject(hFile, &message2.mHeader.mBase);
             }
@@ -275,6 +278,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                 uint8_t dataLen = (fdmessage.mValidDataBytes < 64) ? fdmessage.mValidDataBytes : 64;
                 memcpy(msgData, fdmessage.mData, dataLen);
                 timestamp    = fdmessage.mHeader.mObjectTimeStamp;
+                objectFlags  = fdmessage.mHeader.mObjectFlags;
                 validMessage = true;
                 BLFreeObject(hFile, &fdmessage.mHeader.mBase);
             }
@@ -293,6 +297,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                 uint8_t dataLen = (fdmessage64.mValidDataBytes < 64) ? fdmessage64.mValidDataBytes : 64;
                 memcpy(msgData, fdmessage64.mData, dataLen);
                 timestamp    = fdmessage64.mHeader.mObjectTimeStamp;
+                objectFlags  = fdmessage64.mHeader.mObjectFlags;
                 validMessage = true;
                 BLFreeObject(hFile, &fdmessage64.mHeader.mBase);
             }
@@ -347,8 +352,18 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
 
             if (dbcMessage) {
 
-                // Convert timestamp from nanoseconds to seconds
-                double timestampSec = timestamp / 1e9;
+                // Convert timestamp to seconds based on format flags
+                double timestampSec;
+                if (objectFlags & BL_OBJ_FLAG_TIME_ONE_NANS) {
+                    // 1 nanosecond timestamp
+                    timestampSec = timestamp / 1e9;
+                } else if (objectFlags & BL_OBJ_FLAG_TIME_TEN_MICS) {
+                    // 10 microsecond timestamp
+                    timestampSec = timestamp / 1e5;
+                } else {
+                    // Default: assume 1 nanosecond (safest assumption for modern BLF files)
+                    timestampSec = timestamp / 1e9;
+                }
 
                 // Get or create message data storage
                 std::string msgName         = dbcMessage->name;
@@ -763,6 +778,47 @@ BLF_FASTCALL(BLF_get_signal_offset) {
     return PyFloat_FromDouble(metaIt->second.offset);
 }
 
+// BLF.get_period(message_name) -> int
+BLF_FASTCALL(BLF_get_period) {
+    BLF_CHECK_PARSED;
+    BLF_CHECK_NARGS(1);
+
+    const char* message_name;
+    BLF_GET_STRING_ARG(message_name, 0);
+
+    BLF_FIND_MESSAGE(msgData, message_name);
+
+    // Need at least 2 samples to calculate period
+    if (msgData.num_samples < 2) {
+        PyErr_Format(PyExc_ValueError, "Message '%s' has insufficient samples (%zu) to calculate period",
+                     message_name, msgData.num_samples);
+        return NULL;
+    }
+
+    // Time is always at column 0
+    const double* time_data = msgData.data.data();  // Start of flattened 2D array
+    size_t stride = msgData.num_signals;  // Number of columns
+
+    // Get first and last timestamp
+    double first_time = time_data[0];  // First row, column 0
+    double last_time = time_data[(msgData.num_samples - 1) * stride];  // Last row, column 0
+
+    // Calculate average dt (in seconds)
+    double dt = (last_time - first_time) / (msgData.num_samples - 1);
+
+    // Avoid division by zero or negative dt
+    if (dt <= 0.0) {
+        PyErr_Format(PyExc_ValueError, "Invalid time range for message '%s' (dt = %f)",
+                     message_name, dt);
+        return NULL;
+    }
+
+    // Convert dt to milliseconds and round to nearest integer
+    int period_ms = static_cast<int>(std::round(dt * 1000.0));
+
+    return PyLong_FromLong(period_ms);
+}
+
 // BLF.get_message_data(message_name) -> 2D numpy array
 BLF_FASTCALL(BLF_get_message_data) {
     BLF_CHECK_PARSED;
@@ -819,6 +875,8 @@ static PyMethodDef BLF_methods[] = {
      "Get all signal offsets as dictionary"                                      },
     {  "get_signal_offset",   (PyCFunction)BLF_get_signal_offset, METH_FASTCALL,
      "Get scaling offset for a signal"                                           },
+    {         "get_period", (PyCFunction)BLF_get_period, METH_FASTCALL,
+     "Get sampling period for a message in milliseconds"                         },
     {                 NULL,                                 NULL,             0, NULL}
 };
 

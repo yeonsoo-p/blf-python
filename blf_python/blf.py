@@ -100,6 +100,25 @@ class MessageProxy:
             raise KeyError(f"Signal '{signal_name}' not found in message '{self._message_name}'")
         return offsets[signal_name]
 
+    def get_period(self) -> int:
+        """
+        Get sampling period for this message in milliseconds.
+
+        Calculates the average sampling period by computing:
+        period = ((last_timestamp - first_timestamp) / (num_samples - 1)) * 1000
+
+        Returns:
+            Sampling period in milliseconds (rounded to nearest integer)
+
+        Raises:
+            ValueError: If message has insufficient samples or invalid time range
+
+        Example:
+            >>> period = blf['GpsStatus'].get_period()
+            >>> print(f"Sampling period: {period} ms")
+        """
+        return self._blf.get_period(self._message_name)
+
     # ========================================================================
     # Special Methods
     # ========================================================================
@@ -328,6 +347,29 @@ class BLF:
     def get_signal_offset(self, message_name: str, signal_name: str) -> float:
         """Get scaling offset for a signal."""
         return self[message_name].get_signal_offset(signal_name)
+
+    def get_period(self, message_name: str) -> int:
+        """
+        Get sampling period for a message in milliseconds.
+
+        Calculates the average sampling period by computing:
+        period = ((last_timestamp - first_timestamp) / (num_samples - 1)) * 1000
+
+        Args:
+            message_name: Name of the message
+
+        Returns:
+            Sampling period in milliseconds (rounded to nearest integer)
+
+        Raises:
+            KeyError: If message not found
+            ValueError: If message has insufficient samples or invalid time range
+
+        Example:
+            >>> period = blf.get_period('GpsStatus')
+            >>> print(f"Sampling period: {period} ms")
+        """
+        return self._blf.get_period(message_name)
 
     # ========================================================================
     # Special Methods - Dictionary-style access and operators
