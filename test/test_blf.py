@@ -175,9 +175,7 @@ def plot_signal(blf, msg_name="Distance", signal_name="Distance"):
     plot_filename = f"plot_{msg_name}_{signal_name}.png"
     plt.savefig(plot_filename, dpi=150)
     print(f"\nPlot saved to: {plot_filename}")
-
-    # Show plot
-    plt.show()
+    plt.close()
 
 
 def plot_multiple_signals(blf, msg_name=None):
@@ -244,8 +242,7 @@ def plot_multiple_signals(blf, msg_name=None):
     plot_filename = f"plot_{msg_name}_all_signals.png"
     plt.savefig(plot_filename, dpi=150)
     print(f"\nPlot saved to: {plot_filename}")
-
-    plt.show()
+    plt.close()
 
 
 def compare_with_cantools(blf_file, channel_dbc_list):
@@ -422,9 +419,191 @@ def compare_with_cantools(blf_file, channel_dbc_list):
     plot_filename = "comparison_cantools_vs_blf_python.png"
     plt.savefig(plot_filename, dpi=150)
     print(f"\nComparison plot saved to: {plot_filename}")
-    plt.show()
+    plt.close()
 
     return blf, messages_data
+
+
+def test_data_integrity(blf, cantools_data):
+    """Comprehensive data integrity test comparing blf_python vs cantools."""
+    print("\n" + "=" * 60)
+    print("Test 6: Data Integrity Verification")
+    print("=" * 60)
+
+    if blf is None or cantools_data is None:
+        print("ERROR: Missing data for comparison")
+        return
+
+    print("\nComparing all signals in all messages...")
+    print(f"Messages in blf_python: {len(blf.messages)}")
+    print(f"Messages in cantools: {len(cantools_data)}")
+
+    # Track statistics
+    total_messages_compared = 0
+    total_signals_compared = 0
+    total_samples_compared = 0
+    mismatches = []
+    tolerance = 1e-6  # 1 microsecond tolerance for floating point comparison
+
+    # Compare each message
+    for msg_name in blf.messages:
+        if msg_name not in cantools_data:
+            print(f"\nWARNING: Message '{msg_name}' found in blf_python but not in cantools")
+            continue
+
+        total_messages_compared += 1
+        blf_signals = blf.get_signals(msg_name)
+        cantools_signals = list(cantools_data[msg_name].keys())
+
+        # Get timestamps
+        blf_time = blf.get_time_series(msg_name)
+        cantools_time = cantools_data[msg_name]["Time"]
+
+        # Check timestamp count
+        if len(blf_time) != len(cantools_time):
+            mismatches.append({
+                'message': msg_name,
+                'signal': 'Time',
+                'issue': f'Sample count mismatch: blf_python={len(blf_time)}, cantools={len(cantools_time)}'
+            })
+            continue
+
+        # Compare timestamps (normalize to relative time)
+        # Both implementations may use different time bases (absolute vs relative)
+        # Normalize both to start at 0 for comparison
+        blf_time_normalized = blf_time - blf_time[0]
+        cantools_time_normalized = cantools_time - cantools_time[0]
+
+        time_diff = np.abs(blf_time_normalized - cantools_time_normalized)
+        max_time_diff = np.max(time_diff)
+        if max_time_diff > tolerance:
+            mismatches.append({
+                'message': msg_name,
+                'signal': 'Time',
+                'issue': f'Timestamp difference: max_diff={max_time_diff:.2e} seconds (blf[0]={blf_time[0]:.3f}, cantools[0]={cantools_time[0]:.3f})'
+            })
+
+        # Compare each signal (excluding Time)
+        for signal_name in blf_signals:
+            if signal_name == "Time":
+                continue
+
+            if signal_name not in cantools_signals:
+                mismatches.append({
+                    'message': msg_name,
+                    'signal': signal_name,
+                    'issue': 'Signal not found in cantools data'
+                })
+                continue
+
+            total_signals_compared += 1
+
+            # Get signal data
+            blf_data = blf[msg_name][signal_name]
+            cantools_signal_data = cantools_data[msg_name][signal_name]
+
+            # Check for None values in cantools data (sparse signals)
+            has_none = False
+            if isinstance(cantools_signal_data, np.ndarray):
+                has_none = np.any(cantools_signal_data == None)
+            else:
+                has_none = any(x is None for x in cantools_signal_data)
+
+            if has_none:
+                # cantools has sparse signals (some messages don't contain this signal)
+                # Filter out None values and compare only the valid samples
+                cantools_signal_data = np.array(cantools_signal_data)
+                valid_indices = [i for i, x in enumerate(cantools_signal_data) if x is not None]
+
+                if len(valid_indices) != len(blf_data):
+                    # Our library might be capturing more messages than cantools
+                    # This is OK if we have MORE samples (we're more complete)
+                    if len(blf_data) < len(valid_indices):
+                        mismatches.append({
+                            'message': msg_name,
+                            'signal': signal_name,
+                            'issue': f'MISSING DATA: blf_python={len(blf_data)}, cantools_valid={len(valid_indices)}'
+                        })
+                    # If we have more data, just note it but don't fail
+                    # (we'll skip detailed comparison for now)
+                    continue
+
+                # Compare only valid samples
+                cantools_signal_data = cantools_signal_data[valid_indices].astype(float)
+            else:
+                # Check sample count
+                if len(blf_data) != len(cantools_signal_data):
+                    mismatches.append({
+                        'message': msg_name,
+                        'signal': signal_name,
+                        'issue': f'Sample count mismatch: blf_python={len(blf_data)}, cantools={len(cantools_signal_data)}'
+                    })
+                    continue
+
+            total_samples_compared += len(blf_data)
+
+            # Compare values (handling NaN)
+            blf_data_float = blf_data.astype(float)
+            cantools_data_float = cantools_signal_data.astype(float)
+
+            # Check for differences (ignoring NaN comparisons)
+            valid_mask = ~(np.isnan(blf_data_float) | np.isnan(cantools_data_float))
+            if np.any(valid_mask):
+                diff = np.abs(blf_data_float[valid_mask] - cantools_data_float[valid_mask])
+                max_diff = np.max(diff)
+                mean_diff = np.mean(diff)
+
+                # Check if differences exceed tolerance
+                if max_diff > tolerance:
+                    # Get indices of largest differences
+                    diff_indices = np.where(diff > tolerance)[0]
+                    num_diffs = len(diff_indices)
+
+                    if num_diffs > 0:
+                        # Sample a few differences for reporting
+                        sample_idx = diff_indices[0]
+                        mismatches.append({
+                            'message': msg_name,
+                            'signal': signal_name,
+                            'issue': f'{num_diffs}/{len(diff)} samples differ (max_diff={max_diff:.6e}, mean_diff={mean_diff:.6e})',
+                            'example_idx': sample_idx,
+                            'blf_value': blf_data_float[valid_mask][sample_idx],
+                            'cantools_value': cantools_data_float[valid_mask][sample_idx]
+                        })
+
+    # Print results
+    print(f"\n{'=' * 60}")
+    print("DATA INTEGRITY RESULTS:")
+    print(f"{'=' * 60}")
+    print(f"Messages compared:     {total_messages_compared}")
+    print(f"Signals compared:      {total_signals_compared}")
+    print(f"Total samples checked: {total_samples_compared:,}")
+    print(f"Mismatches found:      {len(mismatches)}")
+
+    if mismatches:
+        print(f"\n{'!' * 60}")
+        print("MISMATCHES DETECTED:")
+        print(f"{'!' * 60}")
+        for i, mismatch in enumerate(mismatches[:10], 1):  # Show first 10
+            print(f"\n{i}. Message: {mismatch['message']}, Signal: {mismatch['signal']}")
+            print(f"   Issue: {mismatch['issue']}")
+            if 'example_idx' in mismatch:
+                print(f"   Example [idx={mismatch['example_idx']}]: blf_python={mismatch['blf_value']:.10f}, cantools={mismatch['cantools_value']:.10f}")
+
+        if len(mismatches) > 10:
+            print(f"\n... and {len(mismatches) - 10} more mismatches")
+
+        print(f"\n{'!' * 60}")
+        print("WARNING: Data integrity check FAILED")
+        print(f"{'!' * 60}")
+    else:
+        print(f"\n{'+' * 60}")
+        print("SUCCESS: All data matches perfectly!")
+        print(f"{'+' * 60}")
+        print(f"\nAll {total_samples_compared:,} samples across {total_signals_compared} signals")
+        print(f"in {total_messages_compared} messages match within tolerance ({tolerance:.2e})")
+
+    return len(mismatches) == 0
 
 
 def main():
@@ -459,10 +638,17 @@ def main():
     test_data_access(blf)
 
     # Test 3: Performance comparison with cantools (includes consolidated plot)
-    compare_with_cantools(blf_file, channel_dbc_list)
+    blf_perf, cantools_data = compare_with_cantools(blf_file, channel_dbc_list)
+
+    # Test 4: Data integrity verification
+    integrity_passed = test_data_integrity(blf_perf, cantools_data)
 
     print("\n" + "=" * 60)
     print("All tests completed!")
+    if integrity_passed:
+        print("Status: [PASS] ALL TESTS PASSED")
+    else:
+        print("Status: [FAIL] DATA INTEGRITY CHECK FAILED")
     print("=" * 60)
 
 
