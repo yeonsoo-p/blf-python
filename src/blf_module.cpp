@@ -889,69 +889,70 @@ static PyMethodDef BLF_methods[] = {
 
 // Type definition
 static PyTypeObject BLFType = {
-    PyVarObject_HEAD_INIT(NULL, 0) "blf_python.BLF",                     /* tp_name */
-    .tp_basicsize         = sizeof(BLFObject),                           /* tp_basicsize */
-    .tp_itemsize          = 0,                                           /* tp_itemsize */
-    .tp_dealloc           = (destructor)BLF_dealloc,                     /* tp_dealloc */
-    .tp_vectorcall_offset = 0,                                           /* tp_vectorcall_offset */
-    .tp_getattr           = 0,                                           /* tp_getattr */
-    .tp_setattr           = 0,                                           /* tp_setattr */
-    .tp_as_async          = 0,                                           /* tp_as_async */
-    .tp_repr              = 0,                                           /* tp_repr */
-    .tp_as_number         = 0,                                           /* tp_as_number */
-    .tp_as_sequence       = 0,                                           /* tp_as_sequence */
-    .tp_as_mapping        = 0,                                           /* tp_as_mapping */
-    .tp_hash              = 0,                                           /* tp_hash */
-    .tp_call              = 0,                                           /* tp_call */
-    .tp_str               = 0,                                           /* tp_str */
-    .tp_getattro          = 0,                                           /* tp_getattro */
-    .tp_setattro          = 0,                                           /* tp_setattro */
-    .tp_as_buffer         = 0,                                           /* tp_as_buffer */
-    .tp_flags             = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,    /* tp_flags */
-    .tp_doc               = "BLF file reader with DBC decoding support", /* tp_doc */
-    .tp_traverse          = 0,                                           /* tp_traverse */
-    .tp_clear             = 0,                                           /* tp_clear */
-    .tp_richcompare       = 0,                                           /* tp_richcompare */
-    .tp_weaklistoffset    = 0,                                           /* tp_weaklistoffset */
-    .tp_iter              = 0,                                           /* tp_iter */
-    .tp_iternext          = 0,                                           /* tp_iternext */
-    .tp_methods           = BLF_methods,                                 /* tp_methods */
-    .tp_members           = 0,                                           /* tp_members */
-    .tp_getset            = 0,                                           /* tp_getset */
-    .tp_base              = 0,                                           /* tp_base */
-    .tp_dict              = 0,                                           /* tp_dict */
-    .tp_descr_get         = 0,                                           /* tp_descr_get */
-    .tp_descr_set         = 0,                                           /* tp_descr_set */
-    .tp_dictoffset        = 0,                                           /* tp_dictoffset */
-    .tp_init              = (initproc)BLF_init,                          /* tp_init */
-    .tp_alloc             = 0,                                           /* tp_alloc */
-    .tp_new               = BLF_new,                                     /* tp_new */
-    .tp_free              = 0,                                           /* tp_free */
-    .tp_is_gc             = 0,                                           /* tp_is_gc */
-    .tp_bases             = 0,                                           /* tp_bases */
-    .tp_mro               = 0,                                           /* tp_mro */
-    .tp_cache             = 0,                                           /* tp_cache */
-    .tp_subclasses        = 0,                                           /* tp_subclasses */
-    .tp_weaklist          = 0,                                           /* tp_weaklist */
-    .tp_del               = 0,                                           /* tp_del */
-    .tp_version_tag       = 0,                                           /* tp_version_tag */
-    .tp_finalize          = 0,                                           /* tp_finalize */
-    .tp_vectorcall        = 0,                                           /* tp_vectorcall */
-    .tp_watched           = 0,                                           /* tp_watched */
-    .tp_versions_used     = 0,                                           /* tp_versions_used */
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "blf_python.BLF",                            /* tp_name */
+    sizeof(BLFObject),                           /* tp_basicsize */
+    0,                                           /* tp_itemsize */
+    (destructor)BLF_dealloc,                     /* tp_dealloc */
+    0,                                           /* tp_vectorcall_offset */
+    0,                                           /* tp_getattr */
+    0,                                           /* tp_setattr */
+    0,                                           /* tp_as_async */
+    0,                                           /* tp_repr */
+    0,                                           /* tp_as_number */
+    0,                                           /* tp_as_sequence */
+    0,                                           /* tp_as_mapping */
+    0,                                           /* tp_hash */
+    0,                                           /* tp_call */
+    0,                                           /* tp_str */
+    0,                                           /* tp_getattro */
+    0,                                           /* tp_setattro */
+    0,                                           /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,    /* tp_flags */
+    "BLF file reader with DBC decoding support", /* tp_doc */
+    0,                                           /* tp_traverse */
+    0,                                           /* tp_clear */
+    0,                                           /* tp_richcompare */
+    0,                                           /* tp_weaklistoffset */
+    0,                                           /* tp_iter */
+    0,                                           /* tp_iternext */
+    BLF_methods,                                 /* tp_methods */
+    0,                                           /* tp_members */
+    0,                                           /* tp_getset */
+    0,                                           /* tp_base */
+    0,                                           /* tp_dict */
+    0,                                           /* tp_descr_get */
+    0,                                           /* tp_descr_set */
+    0,                                           /* tp_dictoffset */
+    (initproc)BLF_init,                          /* tp_init */
+    0,                                           /* tp_alloc */
+    BLF_new,                                     /* tp_new */
+    0,                                           /* tp_free */
+    0,                                           /* tp_is_gc */
+    0,                                           /* tp_bases */
+    0,                                           /* tp_mro */
+    0,                                           /* tp_cache */
+    0,                                           /* tp_subclasses */
+    0,                                           /* tp_weaklist */
+    0,                                           /* tp_del */
+    0,                                           /* tp_version_tag */
+    0,                                           /* tp_finalize */
+    0,                                           /* tp_vectorcall */
+    0,                                           /* tp_watched */
+    0,                                           /* tp_versions_used */
 };
 
 // Module definition
 static PyModuleDef blfmodule = {
     PyModuleDef_HEAD_INIT,
-    .m_name     = "blf_python",
-    .m_doc      = "BLF file reader and decoder with DBC support",
-    .m_size     = -1,
-    .m_methods  = NULL,
-    .m_slots    = NULL,
-    .m_traverse = NULL,
-    .m_clear    = NULL,
-    .m_free     = NULL,
+    "blf_python",                                     /* m_name */
+    "BLF file reader and decoder with DBC support",  /* m_doc */
+    -1,                                               /* m_size */
+    NULL,                                             /* m_methods */
+    NULL,                                             /* m_slots */
+    NULL,                                             /* m_traverse */
+    NULL,                                             /* m_clear */
+    NULL,                                             /* m_free */
 };
 
 // Module initialization

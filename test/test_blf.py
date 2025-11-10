@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 import cantools
 import can
 import numpy as np
-from numpy.typing import NDArray
 
 sys.path.insert(0, str(Path(__file__).parent.parent.absolute()))
 from blf_python import BLF
@@ -34,7 +33,7 @@ def test_basic_loading(blf_file: Path, channel_dbc_list: list[tuple[int, Path]])
         print("Please update the blf_file variable with your actual BLF file path.")
         return None
 
-    for channel, dbc_file in channel_dbc_list:
+    for _, dbc_file in channel_dbc_list:
         if not dbc_file.exists():
             print(f"ERROR: DBC file not found: {dbc_file}")
             print("Please update the channel_dbc_list with valid DBC file paths.")
@@ -43,8 +42,8 @@ def test_basic_loading(blf_file: Path, channel_dbc_list: list[tuple[int, Path]])
     try:
         # Load BLF file
         print(f"\nLoading BLF file: {blf_file}")
-        channels_str = ', '.join(str(ch) if ch >= 0 else 'All' for ch, _ in channel_dbc_list)
-        dbc_files_str = ', '.join(Path(dbc).name for _, dbc in channel_dbc_list)
+        channels_str = ", ".join(str(ch) if ch >= 0 else "All" for ch, _ in channel_dbc_list)
+        dbc_files_str = ", ".join(Path(dbc).name for _, dbc in channel_dbc_list)
         print(f"Channels: {channels_str}")
         print(f"DBC file(s): {dbc_files_str}")
 
@@ -63,7 +62,7 @@ def test_basic_loading(blf_file: Path, channel_dbc_list: list[tuple[int, Path]])
         return blf
 
     except Exception as e:
-        print(f"\nERROR: Failed to load BLF file")
+        print("\nERROR: Failed to load BLF file")
         print(f"Error message: {e}")
         import traceback
 
@@ -92,7 +91,7 @@ def test_data_access(blf: BLF | None) -> None:
 
     # Access timestamp data
     timestamps = blf.get_time_series(msg_name)
-    print(f"\n  Timestamps:")
+    print("\n  Timestamps:")
     print(f"    Shape: {timestamps.shape}")
     print(f"    Dtype: {timestamps.dtype}")
     print(f"    Duration: {timestamps[-1] - timestamps[0]:.3f} seconds")
@@ -269,7 +268,7 @@ def compare_with_cantools(blf_file: Path, channel_dbc_list: list[tuple[int, Path
     msg_count = 0
     decoded_count = 0
     seen_ids = set()
-    channel_filtered = 0
+    #channel_filtered = 0
 
     channels_seen = set()
 
@@ -331,6 +330,9 @@ def compare_with_cantools(blf_file: Path, channel_dbc_list: list[tuple[int, Path
     print("\n[blf_python (our implementation)]")
     print(f"Loading BLF file: {blf_file}")
 
+    # Clear instance cache to ensure we measure actual parsing time, not cached instance retrieval
+    BLF._instances.clear()
+
     start_time = time.perf_counter()
     blf = BLF(blf_file, channel_dbc_list)
     our_parse_time = time.perf_counter() - start_time
@@ -341,7 +343,7 @@ def compare_with_cantools(blf_file: Path, channel_dbc_list: list[tuple[int, Path
     # Calculate speedup
     speedup = cantools_parse_time / our_parse_time
     print(f"\n{'=' * 60}")
-    print(f"PERFORMANCE SUMMARY:")
+    print("PERFORMANCE SUMMARY:")
     print(f"  cantools + python-can: {cantools_parse_time:.3f} seconds")
     print(f"  blf_python (ours):     {our_parse_time:.3f} seconds")
     print(f"  Speedup:               {speedup:.2f}x faster")
@@ -463,11 +465,7 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
 
         # Check timestamp count
         if len(blf_time) != len(cantools_time):
-            mismatches.append({
-                'message': msg_name,
-                'signal': 'Time',
-                'issue': f'Sample count mismatch: blf_python={len(blf_time)}, cantools={len(cantools_time)}'
-            })
+            mismatches.append({"message": msg_name, "signal": "Time", "issue": f"Sample count mismatch: blf_python={len(blf_time)}, cantools={len(cantools_time)}"})
             continue
 
         # Compare timestamps (normalize to relative time)
@@ -479,11 +477,7 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
         time_diff = np.abs(blf_time_normalized - cantools_time_normalized)
         max_time_diff = np.max(time_diff)
         if max_time_diff > tolerance:
-            mismatches.append({
-                'message': msg_name,
-                'signal': 'Time',
-                'issue': f'Timestamp difference: max_diff={max_time_diff:.2e} seconds (blf[0]={blf_time[0]:.3f}, cantools[0]={cantools_time[0]:.3f})'
-            })
+            mismatches.append({"message": msg_name, "signal": "Time", "issue": f"Timestamp difference: max_diff={max_time_diff:.2e} seconds (blf[0]={blf_time[0]:.3f}, cantools[0]={cantools_time[0]:.3f})"})
 
         # Compare each signal (excluding Time)
         for signal_name in blf_signals:
@@ -491,11 +485,7 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
                 continue
 
             if signal_name not in cantools_signals:
-                mismatches.append({
-                    'message': msg_name,
-                    'signal': signal_name,
-                    'issue': 'Signal not found in cantools data'
-                })
+                mismatches.append({"message": msg_name, "signal": signal_name, "issue": "Signal not found in cantools data"})
                 continue
 
             total_signals_compared += 1
@@ -507,7 +497,7 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
             # Check for None values in cantools data (sparse signals)
             has_none = False
             if isinstance(cantools_signal_data, np.ndarray):
-                has_none = np.any(cantools_signal_data == None)
+                has_none = np.any(cantools_signal_data is None)
             else:
                 has_none = any(x is None for x in cantools_signal_data)
 
@@ -521,11 +511,7 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
                     # Our library might be capturing more messages than cantools
                     # This is OK if we have MORE samples (we're more complete)
                     if len(blf_data) < len(valid_indices):
-                        mismatches.append({
-                            'message': msg_name,
-                            'signal': signal_name,
-                            'issue': f'MISSING DATA: blf_python={len(blf_data)}, cantools_valid={len(valid_indices)}'
-                        })
+                        mismatches.append({"message": msg_name, "signal": signal_name, "issue": f"MISSING DATA: blf_python={len(blf_data)}, cantools_valid={len(valid_indices)}"})
                     # If we have more data, just note it but don't fail
                     # (we'll skip detailed comparison for now)
                     continue
@@ -535,11 +521,7 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
             else:
                 # Check sample count
                 if len(blf_data) != len(cantools_signal_data):
-                    mismatches.append({
-                        'message': msg_name,
-                        'signal': signal_name,
-                        'issue': f'Sample count mismatch: blf_python={len(blf_data)}, cantools={len(cantools_signal_data)}'
-                    })
+                    mismatches.append({"message": msg_name, "signal": signal_name, "issue": f"Sample count mismatch: blf_python={len(blf_data)}, cantools={len(cantools_signal_data)}"})
                     continue
 
             total_samples_compared += len(blf_data)
@@ -564,14 +546,9 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
                     if num_diffs > 0:
                         # Sample a few differences for reporting
                         sample_idx = diff_indices[0]
-                        mismatches.append({
-                            'message': msg_name,
-                            'signal': signal_name,
-                            'issue': f'{num_diffs}/{len(diff)} samples differ (max_diff={max_diff:.6e}, mean_diff={mean_diff:.6e})',
-                            'example_idx': sample_idx,
-                            'blf_value': blf_data_float[valid_mask][sample_idx],
-                            'cantools_value': cantools_data_float[valid_mask][sample_idx]
-                        })
+                        mismatches.append(
+                            {"message": msg_name, "signal": signal_name, "issue": f"{num_diffs}/{len(diff)} samples differ (max_diff={max_diff:.6e}, mean_diff={mean_diff:.6e})", "example_idx": sample_idx, "blf_value": blf_data_float[valid_mask][sample_idx], "cantools_value": cantools_data_float[valid_mask][sample_idx]}
+                        )
 
     # Print results
     print(f"\n{'=' * 60}")
@@ -589,7 +566,7 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
         for i, mismatch in enumerate(mismatches[:10], 1):  # Show first 10
             print(f"\n{i}. Message: {mismatch['message']}, Signal: {mismatch['signal']}")
             print(f"   Issue: {mismatch['issue']}")
-            if 'example_idx' in mismatch:
+            if "example_idx" in mismatch:
                 print(f"   Example [idx={mismatch['example_idx']}]: blf_python={mismatch['blf_value']:.10f}, cantools={mismatch['cantools_value']:.10f}")
 
         if len(mismatches) > 10:
@@ -606,6 +583,106 @@ def test_data_integrity(blf: BLF | None, cantools_data: dict[str, Any]) -> bool:
         print(f"in {total_messages_compared} messages match within tolerance ({tolerance:.2e})")
 
     return len(mismatches) == 0
+
+
+def plot_velyawlocal_comparison(blf: BLF | None, cantools_data: dict[str, Any]) -> None:
+    """Plot VelYawLocal.AngleLocalTrack signal comparison between blf_python and cantools."""
+    print("\n" + "=" * 60)
+    print("Test 6b: VelYawLocal.AngleLocalTrack Signal Comparison")
+    print("=" * 60)
+
+    if blf is None or cantools_data is None:
+        print("ERROR: Missing data for comparison")
+        return
+
+    msg_name = "VelYawLocal"
+    signal_name = "AngleLocalTrack"
+
+    # Check if message exists in both datasets
+    if msg_name not in blf.get_message_names():
+        print(f"ERROR: Message '{msg_name}' not found in blf_python")
+        return
+    if msg_name not in cantools_data:
+        print(f"ERROR: Message '{msg_name}' not found in cantools data")
+        return
+
+    # Check if signal exists
+    blf_signals = blf.get_signals(msg_name)
+    if signal_name not in blf_signals:
+        print(f"ERROR: Signal '{signal_name}' not found in blf_python message '{msg_name}'")
+        return
+    if signal_name not in cantools_data[msg_name]:
+        print(f"ERROR: Signal '{signal_name}' not found in cantools message '{msg_name}'")
+        return
+
+    # Get data
+    blf_time = blf.get_time_series(msg_name)
+    blf_signal = blf[msg_name][signal_name]
+    cantools_time = cantools_data[msg_name]["Time"]
+    cantools_signal = cantools_data[msg_name][signal_name]
+
+    # Filter out None values from cantools data (sparse signal handling)
+    valid_indices = [i for i, val in enumerate(cantools_signal) if val is not None]
+    cantools_time_filtered = cantools_time[valid_indices]
+    cantools_signal_filtered = np.array([cantools_signal[i] for i in valid_indices])
+
+    print(f"\nData summary:")
+    print(f"  blf_python samples:        {len(blf_time):,}")
+    print(f"  cantools total samples:    {len(cantools_time):,}")
+    print(f"  cantools valid samples:    {len(cantools_time_filtered):,}")
+    print(f"  cantools None samples:     {len(cantools_time) - len(cantools_time_filtered):,}")
+    print(f"  Sample count diff:         {len(blf_time) - len(cantools_time_filtered):,}")
+    print(f"  blf_python time range:     {blf_time[0]:.3f}s - {blf_time[-1]:.3f}s ({blf_time[-1] - blf_time[0]:.3f}s)")
+    print(f"  cantools time range:       {cantools_time[0]:.3f}s - {cantools_time[-1]:.3f}s ({cantools_time[-1] - cantools_time[0]:.3f}s)")
+    if len(cantools_time_filtered) > 0:
+        print(f"  cantools valid time range: {cantools_time_filtered[0]:.3f}s - {cantools_time_filtered[-1]:.3f}s ({cantools_time_filtered[-1] - cantools_time_filtered[0]:.3f}s)")
+
+    # Create comparison plot
+    fig, axes = plt.subplots(3, 1, figsize=(14, 10))
+
+    # Plot 1: blf_python data
+    ax = axes[0]
+    ax.plot(blf_time, blf_signal, linewidth=0.5, alpha=0.8, color="tab:orange", label="blf_python")
+    ax.set_xlabel("Time (seconds)", fontsize=11)
+    ax.set_ylabel(signal_name, fontsize=11)
+    ax.set_title(f"blf_python: {msg_name}.{signal_name} ({len(blf_time):,} samples)", fontsize=12, fontweight="bold")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right")
+
+    # Plot 2: cantools data (filtered)
+    ax = axes[1]
+    ax.plot(cantools_time_filtered, cantools_signal_filtered, linewidth=0.5, alpha=0.8, color="tab:blue", label="cantools")
+    ax.set_xlabel("Time (seconds)", fontsize=11)
+    ax.set_ylabel(signal_name, fontsize=11)
+    ax.set_title(f"cantools: {msg_name}.{signal_name} ({len(cantools_time_filtered):,} valid samples, {len(cantools_time) - len(cantools_time_filtered):,} None)", fontsize=12, fontweight="bold")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right")
+
+    # Plot 3: Overlay with different colors
+    ax = axes[2]
+    ax.plot(cantools_time_filtered, cantools_signal_filtered, linewidth=1.0, alpha=0.6, color="tab:blue", label=f"cantools ({len(cantools_time_filtered):,} valid samples)")
+    ax.plot(blf_time, blf_signal, linewidth=0.8, alpha=0.6, color="tab:orange", label=f"blf_python ({len(blf_time):,} samples)")
+    ax.set_xlabel("Time (seconds)", fontsize=11)
+    ax.set_ylabel(signal_name, fontsize=11)
+    ax.set_title(f"Overlay Comparison: {msg_name}.{signal_name}", fontsize=12, fontweight="bold")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right")
+
+    # Add statistics annotation
+    stats_text = f"Sample count difference: {len(blf_time) - len(cantools_time_filtered):,}\n"
+    if len(cantools_time_filtered) > 0:
+        stats_text += f"blf_python has {((len(blf_time) - len(cantools_time_filtered)) / len(cantools_time_filtered) * 100):.1f}% more samples\n"
+    stats_text += f"cantools has {len(cantools_time) - len(cantools_time_filtered):,} None values (sparse signal)"
+    ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, va="bottom", fontsize=10,
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+
+    plt.suptitle(f"VelYawLocal.AngleLocalTrack: Sample Count Mismatch Investigation", fontsize=14, fontweight="bold")
+    plt.tight_layout()
+
+    plot_filename = "velyawlocal_anglelocal_comparison.png"
+    plt.savefig(plot_filename, dpi=150)
+    print(f"\nComparison plot saved to: {plot_filename}")
+    plt.close()
 
 
 def test_all_blf_methods(blf: BLF | None) -> bool:
@@ -633,7 +710,7 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         print("\n[2/20] Testing messages property...")
         msg_prop = blf.get_message_names()
         assert msg_names == msg_prop, "Property should match get_message_names()"
-        print(f"  [OK] Property returns same as get_message_names()")
+        print("  [OK] Property returns same as get_message_names()")
         test_results.append(("messages property", True))
 
         # Get a test message for subsequent tests
@@ -685,7 +762,7 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         test_results.append(("get_message()", True))
 
         # Test 8: get_all_messages()
-        print(f"\n[8/20] Testing get_all_messages()...")
+        print("\n[8/20] Testing get_all_messages()...")
         all_msgs = blf.get_all_messages()
         assert isinstance(all_msgs, dict), "Should return dict"
         assert len(all_msgs) == len(msg_names), "Should have all messages"
@@ -694,17 +771,17 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         test_results.append(("get_all_messages()", True))
 
         # Test 9: __contains__
-        print(f"\n[9/20] Testing __contains__...")
+        print("\n[9/20] Testing __contains__...")
         assert test_msg in blf, "Existing message should be in blf"
         assert "NonExistentMessage" not in blf, "Non-existent message should not be in blf"
-        print(f"  [OK] __contains__ works correctly")
+        print("  [OK] __contains__ works correctly")
         test_results.append(("__contains__", True))
 
         # Test 10: __getitem__ (MessageProxy)
-        print(f"\n[10/20] Testing __getitem__ (MessageProxy)...")
+        print("\n[10/20] Testing __getitem__ (MessageProxy)...")
         proxy = blf[test_msg]
-        assert hasattr(proxy, 'get_signal'), "Should return MessageProxy"
-        assert hasattr(proxy, 'get_signal_names'), "Should have get_signal_names"
+        assert hasattr(proxy, "get_signal"), "Should return MessageProxy"
+        assert hasattr(proxy, "get_signal_names"), "Should have get_signal_names"
         print(f"  [OK] Got MessageProxy: {proxy}")
         test_results.append(("__getitem__", True))
 
@@ -712,32 +789,32 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         print(f"\n[11/20] Testing MessageProxy.get_signal('{test_signal}')...")
         proxy_signal = proxy.get_signal(test_signal)
         assert np.array_equal(proxy_signal, signal_data), "Should match get_signal()"
-        print(f"  [OK] MessageProxy returns same data as BLF.get_signal()")
+        print("  [OK] MessageProxy returns same data as BLF.get_signal()")
         test_results.append(("MessageProxy.get_signal()", True))
 
         # Test 12: MessageProxy.__getitem__
         print(f"\n[12/20] Testing MessageProxy['{test_signal}']...")
         proxy_item = proxy[test_signal]
         assert np.array_equal(proxy_item, signal_data), "Should match get_signal()"
-        print(f"  [OK] Dictionary-style access works")
+        print("  [OK] Dictionary-style access works")
         test_results.append(("MessageProxy.__getitem__", True))
 
         # Test 13: MessageProxy.__contains__
-        print(f"\n[13/20] Testing MessageProxy.__contains__...")
+        print("\n[13/20] Testing MessageProxy.__contains__...")
         assert test_signal in proxy, "Signal should be in proxy"
         assert "NonExistentSignal" not in proxy, "Non-existent signal should not be in proxy"
-        print(f"  [OK] MessageProxy.__contains__ works")
+        print("  [OK] MessageProxy.__contains__ works")
         test_results.append(("MessageProxy.__contains__", True))
 
         # Test 14: MessageProxy.get_signal_names()
-        print(f"\n[14/20] Testing MessageProxy.get_signal_names()...")
+        print("\n[14/20] Testing MessageProxy.get_signal_names()...")
         proxy_signals = proxy.get_signal_names()
         assert proxy_signals == signals, "Should match BLF.get_signals()"
         print(f"  [OK] Got {len(proxy_signals)} signal names")
         test_results.append(("MessageProxy.get_signal_names()", True))
 
         # Test 15: MessageProxy.get_signal_units()
-        print(f"\n[15/20] Testing MessageProxy.get_signal_units()...")
+        print("\n[15/20] Testing MessageProxy.get_signal_units()...")
         units = proxy.get_signal_units()
         assert isinstance(units, dict), "Should return dict"
         assert len(units) == len(signals), "Should have all signals"
@@ -753,7 +830,7 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         test_results.append(("MessageProxy.get_signal_unit()", True))
 
         # Test 17: MessageProxy.get_signal_factors()
-        print(f"\n[17/20] Testing MessageProxy.get_signal_factors()...")
+        print("\n[17/20] Testing MessageProxy.get_signal_factors()...")
         factors = proxy.get_signal_factors()
         assert isinstance(factors, dict), "Should return dict"
         assert len(factors) == len(signals), "Should have all signals"
@@ -769,7 +846,7 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         test_results.append(("MessageProxy.get_signal_factor()", True))
 
         # Test 19: MessageProxy.get_signal_offsets()
-        print(f"\n[19/20] Testing MessageProxy.get_signal_offsets()...")
+        print("\n[19/20] Testing MessageProxy.get_signal_offsets()...")
         offsets = proxy.get_signal_offsets()
         assert isinstance(offsets, dict), "Should return dict"
         assert len(offsets) == len(signals), "Should have all signals"
@@ -798,7 +875,7 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         test_results.append(("get_period()", True))
 
         # Test 22: MessageProxy.get_period()
-        print(f"\n[22/23] Testing MessageProxy.get_period()...")
+        print("\n[22/23] Testing MessageProxy.get_period()...")
         period2 = proxy.get_period()
         assert isinstance(period2, int), "Should return int"
         assert period2 == period, "Should match BLF.get_period()"
@@ -806,13 +883,13 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         test_results.append(("MessageProxy.get_period()", True))
 
         # Test 23: get_period() with insufficient samples (error case)
-        print(f"\n[23/23] Testing get_period() error handling...")
+        print("\n[23/23] Testing get_period() error handling...")
         # We can't easily test this with real data, so just note it
-        print(f"  [OK] Error handling tested via known edge cases in C++ code")
+        print("  [OK] Error handling tested via known edge cases in C++ code")
         test_results.append(("get_period() error handling", True))
 
         # Test caching
-        print(f"\n[BONUS] Testing caching...")
+        print("\n[BONUS] Testing caching...")
         # Call plural methods again - should use cache
         units2 = proxy.get_signal_units()
         factors2 = proxy.get_signal_factors()
@@ -820,14 +897,15 @@ def test_all_blf_methods(blf: BLF | None) -> bool:
         assert units is units2, "Should return cached dict (same object)"
         assert factors is factors2, "Should return cached dict (same object)"
         assert offsets is offsets2, "Should return cached dict (same object)"
-        print(f"  [OK] Caching works (returns same dict objects)")
+        print("  [OK] Caching works (returns same dict objects)")
         test_results.append(("Caching", True))
 
     except Exception as e:
         print(f"\n  [FAIL] Test failed: {e}")
         import traceback
+
         traceback.print_exc()
-        test_results.append((f"Test failed", False))
+        test_results.append(("Test failed", False))
         return False
 
     # Print summary
@@ -1036,6 +1114,9 @@ def main() -> None:
 
     # Test 4: Data integrity verification
     integrity_passed = test_data_integrity(blf_perf, cantools_data)
+
+    # Test 4b: Plot VelYawLocal.AngleLocalTrack comparison
+    plot_velyawlocal_comparison(blf_perf, cantools_data)
 
     # Test 5: Comprehensive API method testing
     api_passed = test_all_blf_methods(blf)

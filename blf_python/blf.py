@@ -29,7 +29,7 @@ class MessageProxy:
         # Validate message_name type early to prevent cryptic C++ errors
         if not isinstance(message_name, str):
             raise TypeError(f"message_name must be str, got {type(message_name).__name__}")
-        if '\x00' in message_name:
+        if "\x00" in message_name:
             raise ValueError(f"message_name cannot contain null bytes: {message_name!r}")
 
         self._blf: _blf_c.BLF = blf
@@ -73,9 +73,7 @@ class MessageProxy:
             try:
                 self._cached_units = self._blf.get_signal_units(self._message_name)
             except (TypeError, RuntimeError, ValueError) as e:
-                raise type(e)(
-                    f"Failed to get signal units for message '{self._message_name}': {e}"
-                ) from e
+                raise type(e)(f"Failed to get signal units for message '{self._message_name}': {e}") from e
         return self._cached_units
 
     def get_signal_unit(self, signal_name: str) -> str:
@@ -91,9 +89,7 @@ class MessageProxy:
             try:
                 self._cached_factors = self._blf.get_signal_factors(self._message_name)
             except (TypeError, RuntimeError, ValueError) as e:
-                raise type(e)(
-                    f"Failed to get signal factors for message '{self._message_name}': {e}"
-                ) from e
+                raise type(e)(f"Failed to get signal factors for message '{self._message_name}': {e}") from e
         return self._cached_factors
 
     def get_signal_factor(self, signal_name: str) -> float:
@@ -109,9 +105,7 @@ class MessageProxy:
             try:
                 self._cached_offsets = self._blf.get_signal_offsets(self._message_name)
             except (TypeError, RuntimeError, ValueError) as e:
-                raise type(e)(
-                    f"Failed to get signal offsets for message '{self._message_name}': {e}"
-                ) from e
+                raise type(e)(f"Failed to get signal offsets for message '{self._message_name}': {e}") from e
         return self._cached_offsets
 
     def get_signal_offset(self, signal_name: str) -> float:
@@ -190,9 +184,9 @@ class BLF:
     """
 
     # Class-level cache for instances
-    _instances: dict[tuple[Path, tuple[tuple[int, str], ...]], 'BLF'] = {}
+    _instances: dict[tuple[Path, tuple[tuple[int, str], ...]], "BLF"] = {}
 
-    def __new__(cls, filepath: str | Path, channel_dbc_list: list[tuple[int, str | Path]]) -> 'BLF':
+    def __new__(cls, filepath: str | Path, channel_dbc_list: list[tuple[int, str | Path]]) -> "BLF":
         """
         Create or return cached BLF instance.
 
@@ -207,10 +201,7 @@ class BLF:
         filepath_obj = Path(filepath).resolve()
 
         # Normalize channel_dbc_list to a hashable tuple of (channel, resolved_dbc_path)
-        normalized_channels = tuple(
-            (channel, str(Path(dbc_path).resolve()))
-            for channel, dbc_path in channel_dbc_list
-        )
+        normalized_channels = tuple((channel, str(Path(dbc_path).resolve())) for channel, dbc_path in channel_dbc_list)
 
         # Create cache key from filepath and channel configuration
         cache_key = (filepath_obj, normalized_channels)
@@ -255,7 +246,7 @@ class BLF:
             Instance caching means opening the same file twice returns the same object.
         """
         # Only initialize if not already initialized (for cached instances)
-        if hasattr(self, '_blf'):
+        if hasattr(self, "_blf"):
             return  # Already initialized from cache
 
         # Convert to Path for validation
@@ -419,7 +410,7 @@ class BLF:
     def __str__(self) -> str:
         """Human-readable string representation."""
         lines = [f"BLF File: {self.filepath}"]
-        channels_str = ', '.join(str(ch) for ch, _ in self.channel_dbc_list)
+        channels_str = ", ".join(str(ch) for ch, _ in self.channel_dbc_list)
         lines.append(f"Channels: {channels_str}")
         lines.append(f"DBC Files: {', '.join(Path(f).name for f in self.dbc_files)}")
         lines.append(f"\nMessages ({len(self.get_message_names())}):")
