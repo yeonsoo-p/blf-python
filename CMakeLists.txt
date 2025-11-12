@@ -41,7 +41,7 @@ target_link_libraries(blf_python PRIVATE
 )
 
 # Set compiler flags (disable cast-function-type warning for Python C API compatibility)
-target_compile_options(blf_python PRIVATE -O3 -DNDEBUG -Wall -Wextra -Wno-cast-function-type)
+target_compile_options(blf_python PRIVATE -O3 -march=x86-64 -flto -DNDEBUG -Wall -Wextra -Wno-cast-function-type)
 
 # Set output directory
 set_target_properties(blf_python PROPERTIES
