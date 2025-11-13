@@ -627,10 +627,8 @@ BLF_FASTCALL(BLF_get_signal_units) {
 
     BLF_FIND_MESSAGE(msgData, message_name);
 
-    PyObject* dict = PyDict_New();
-    if (dict == NULL) {
-        return NULL;
-    }
+    PyObject* dict;
+    BLF_NEW_DICT(dict);
 
     for (const auto& metaPair : msgData.signal_metadata) {
         PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
@@ -683,10 +681,8 @@ BLF_FASTCALL(BLF_get_signal_factors) {
 
     BLF_FIND_MESSAGE(msgData, message_name);
 
-    PyObject* dict = PyDict_New();
-    if (dict == NULL) {
-        return NULL;
-    }
+    PyObject* dict;
+    BLF_NEW_DICT(dict);
 
     for (const auto& metaPair : msgData.signal_metadata) {
         PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
@@ -739,10 +735,8 @@ BLF_FASTCALL(BLF_get_signal_offsets) {
 
     BLF_FIND_MESSAGE(msgData, message_name);
 
-    PyObject* dict = PyDict_New();
-    if (dict == NULL) {
-        return NULL;
-    }
+    PyObject* dict;
+    BLF_NEW_DICT(dict);
 
     for (const auto& metaPair : msgData.signal_metadata) {
         PyObject* key = PyUnicode_FromString(metaPair.first.c_str());

@@ -86,12 +86,18 @@ struct MessageChannelKeyHash {
                 Py_TYPE(arg_obj)->tp_name);                                               \
             return NULL;                                                                  \
         }                                                                                 \
+        if (!PyUnicode_IS_COMPACT_ASCII(arg_obj)) {                                       \
+            PyErr_Format(PyExc_ValueError,                                                \
+                "Argument %d must be ASCII-only string",                                  \
+                (int)(index));                                                            \
+            return NULL;                                                                  \
+        }                                                                                 \
         Py_ssize_t size;                                                                  \
         var = PyUnicode_AsUTF8AndSize(arg_obj, &size);                                    \
         if (var == NULL) {                                                                \
             if (!PyErr_Occurred()) {                                                      \
                 PyErr_SetString(PyExc_RuntimeError,                                       \
-                    "Failed to decode string argument (invalid UTF-8 encoding)");         \
+                    "Failed to decode string argument");                                  \
             }                                                                             \
             return NULL;                                                                  \
         }                                                                                 \
@@ -119,6 +125,16 @@ struct MessageChannelKeyHash {
         return NULL;                                                      \
     }                                                                     \
     const SignalMetadata& sig_var = sig_var##_it->second;
+
+// Python object creation macros
+#define BLF_NEW_DICT(var)                                                  \
+    do {                                                                   \
+        var = PyDict_New();                                                \
+        if (var == NULL) {                                                 \
+            PyErr_SetString(PyExc_MemoryError, "Failed to allocate dict"); \
+            return NULL;                                                   \
+        }                                                                  \
+    } while (0)
 
 #define BLF_NEW_LIST(var, size)                                            \
     do {                                                                   \
