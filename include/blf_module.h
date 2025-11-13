@@ -205,12 +205,12 @@ struct ChannelDBCMapping {
 // BLF Python object structure
 typedef struct {
     PyObject_HEAD;
-    std::unordered_map<std::string, MessageData>                                        messages_data;
-    std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash> dbc_network_cache;
-    std::vector<Vector::DBC::Network>                                                   networks;         // Store networks to keep Network pointers valid
-    std::vector<int>                                                                    network_channels; // Store which channel each network belongs to
-    int                                                                                 initialized;
-    int                                                                                 parsed;
+    std::unordered_map<std::string, MessageData>                                   messages_data;
+    std::unordered_map<MessageChannelKey, size_t, MessageChannelKeyHash>           dbc_network_cache; // Maps to network index instead of pointer
+    std::vector<Vector::DBC::Network>                                              networks;          // Store networks
+    std::vector<int>                                                               network_channels;  // Store which channel each network belongs to
+    int                                                                            initialized;
+    int                                                                            parsed;
 } BLFObject;
 
 #endif // BLF_MODULE_H

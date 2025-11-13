@@ -86,29 +86,45 @@ static PyObject* BLF_new(PyTypeObject* type, PyObject* Py_UNUSED(args), PyObject
 }
 
 // Helper function to convert Python path object (str or Path) to C string
+// Note: The returned string is owned by the Python object and is valid only
+// while the path_obj is alive or until the next call to get_path_string.
+// Caller should use the string immediately within the same scope as path_obj.
 static const char* get_path_string(PyObject* path_obj) {
     // If it's already a string, return it directly
+    // The string data is owned by path_obj and remains valid as long as path_obj is alive
     if (PyUnicode_Check(path_obj)) {
         return PyUnicode_AsUTF8(path_obj);
     }
 
-    // If it's a Path object, call __str__() or __fspath__()
+    // If it's a Path object, call __fspath__()
+    // We need to keep the returned PyObject alive, so we use a static to cache it
+    // This is safe because get_path_string is only called during initialization
+    static PyObject* cached_fspath = nullptr;
+
     if (PyObject_HasAttrString(path_obj, "__fspath__")) {
+        // Clear previous cached object if any
+        Py_XDECREF(cached_fspath);
+        cached_fspath = nullptr;
+
         PyObject* fspath = PyObject_CallMethod(path_obj, "__fspath__", NULL);
         if (fspath && PyUnicode_Check(fspath)) {
-            const char* result = PyUnicode_AsUTF8(fspath);
-            Py_DECREF(fspath);
-            return result;
+            // Cache the fspath object to keep it alive
+            cached_fspath = fspath;
+            return PyUnicode_AsUTF8(fspath);
         }
         Py_XDECREF(fspath);
     }
 
     // Try __str__() as fallback
+    // Use the same caching strategy
+    Py_XDECREF(cached_fspath);
+    cached_fspath = nullptr;
+
     PyObject* str_obj = PyObject_Str(path_obj);
     if (str_obj && PyUnicode_Check(str_obj)) {
-        const char* result = PyUnicode_AsUTF8(str_obj);
-        Py_DECREF(str_obj);
-        return result;
+        // Cache the str object to keep it alive
+        cached_fspath = str_obj;
+        return PyUnicode_AsUTF8(str_obj);
     }
     Py_XDECREF(str_obj);
 
@@ -313,7 +329,7 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         if (validMessage) {
 
             // Find matching message in DBC files using cache
-            // The cache maps (message_id, channel) -> network
+            // The cache maps (message_id, channel) -> network index (not pointer!)
             const Vector::DBC::Message* dbcMessage = nullptr;
 
             // Create cache key
@@ -322,10 +338,11 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             // Check cache first
             auto cacheIt = self->dbc_network_cache.find(cache_key);
             if (cacheIt != self->dbc_network_cache.end()) {
-                // Cache hit - look up message in the cached network
-                Vector::DBC::Network* cached_network = cacheIt->second;
-                auto                  msgIt          = cached_network->messages.find(msgId);
-                if (msgIt != cached_network->messages.end()) {
+                // Cache hit - look up message using the cached network index
+                size_t                network_idx     = cacheIt->second;
+                Vector::DBC::Network& cached_network  = self->networks[network_idx];
+                auto                  msgIt           = cached_network.messages.find(msgId);
+                if (msgIt != cached_network.messages.end()) {
                     dbcMessage = &msgIt->second;
                 }
             } else {
@@ -343,8 +360,8 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     auto msgIt = network.messages.find(msgId);
                     if (msgIt != network.messages.end()) {
                         dbcMessage = &msgIt->second;
-                        // Cache this lookup for future messages on this channel
-                        self->dbc_network_cache[cache_key] = &network;
+                        // Cache the network INDEX (not pointer) for future messages on this channel
+                        self->dbc_network_cache[cache_key] = i;
                         break;
                     }
                 }
@@ -541,9 +558,10 @@ BLF_FASTCALL(BLF_get_signal) {
     npy_intp dims[1]    = {static_cast<npy_intp>(msgData.num_samples)};
     npy_intp strides[1] = {static_cast<npy_intp>(msgData.num_signals * sizeof(double))};
 
+    // Create read-only array (no NPY_ARRAY_WRITEABLE flag) to prevent data corruption
     PyObject* array = PyArray_New(&PyArray_Type, 1, dims, NPY_DOUBLE, strides,
                                   const_cast<double*>(&msgData.data[col_idx]),
-                                  sizeof(double), NPY_ARRAY_WRITEABLE, NULL);
+                                  sizeof(double), 0, NULL);
     if (array == NULL) {
         return NULL;
     }
@@ -836,8 +854,10 @@ BLF_FASTCALL(BLF_get_message_data) {
         static_cast<npy_intp>(msgData.num_samples),
         static_cast<npy_intp>(msgData.num_signals)};
 
-    PyObject* array = PyArray_SimpleNewFromData(2, dims, NPY_DOUBLE,
-                                                const_cast<double*>(msgData.data.data()));
+    // Create read-only array (no NPY_ARRAY_WRITEABLE flag) to prevent data corruption
+    PyObject* array = PyArray_New(&PyArray_Type, 2, dims, NPY_DOUBLE, NULL,
+                                  const_cast<double*>(msgData.data.data()),
+                                  sizeof(double), 0, NULL);
     if (array == NULL) {
         return NULL;
     }
