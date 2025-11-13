@@ -54,7 +54,7 @@ struct VECTOR_DBC_EXPORT AttributeValueType {
     };
 
     /** @copydoc Type */
-    Type type { Type::Int };
+    Type type{Type::Int};
 
     /** Value Union */
     union {
@@ -77,10 +77,10 @@ struct VECTOR_DBC_EXPORT AttributeValueType {
     };
 
     /** Values of type AttributeValueType::Enum */
-    std::vector<std::string> enumValues {};
+    std::vector<std::string> enumValues{};
 };
 
-std::ostream & operator<<(std::ostream & os, const AttributeValueType & attributeValueType);
+std::ostream& operator<<(std::ostream& os, const AttributeValueType& attributeValueType);
 
-}
-}
+} // namespace DBC
+} // namespace Vector

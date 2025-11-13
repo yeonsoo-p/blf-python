@@ -9,6 +9,12 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Compiler flags for different build types
+set(CMAKE_C_FLAGS_RELEASE "-O3 -march=x86-64 -DNDEBUG")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wpedantic")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=x86-64 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wpedantic")
+
 # Find Python
 find_package(Python3 REQUIRED COMPONENTS Development NumPy)
 
@@ -40,8 +46,8 @@ target_link_libraries(blf_python PRIVATE
     -static-libgcc
 )
 
-# Set compiler flags (disable cast-function-type warning for Python C API compatibility)
-target_compile_options(blf_python PRIVATE -O3 -march=x86-64 -flto -DNDEBUG -Wall -Wextra -Wno-cast-function-type)
+# Disable cast-function-type warning for Python C API compatibility
+target_compile_options(blf_python PRIVATE -Wno-cast-function-type)
 
 # Set output directory
 set_target_properties(blf_python PROPERTIES

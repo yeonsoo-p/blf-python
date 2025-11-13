@@ -45,5 +45,5 @@ enum class ByteOrder : char {
     LittleEndian = '1'
 };
 
-}
-}
+} // namespace DBC
+} // namespace Vector

@@ -236,9 +236,9 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             bSuccess              = BLReadObjectSecure(hFile, &message.mHeader.mBase, sizeof(VBLCANMessage));
 
             if (bSuccess) {
-                msgId        = message.mID;
-                msgChannel   = message.mChannel;
-                msgDlc       = message.mDLC;
+                msgId      = message.mID;
+                msgChannel = message.mChannel;
+                msgDlc     = message.mDLC;
                 memcpy(msgData, message.mData, (msgDlc < 8) ? msgDlc : 8);
                 timestamp    = message.mHeader.mObjectTimeStamp;
                 objectFlags  = message.mHeader.mObjectFlags;
@@ -254,9 +254,9 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             bSuccess               = BLReadObjectSecure(hFile, &message2.mHeader.mBase, sizeof(VBLCANMessage2));
 
             if (bSuccess) {
-                msgId        = message2.mID;
-                msgChannel   = message2.mChannel;
-                msgDlc       = message2.mDLC;
+                msgId      = message2.mID;
+                msgChannel = message2.mChannel;
+                msgDlc     = message2.mDLC;
                 memcpy(msgData, message2.mData, (msgDlc < 8) ? msgDlc : 8);
                 timestamp    = message2.mHeader.mObjectTimeStamp;
                 objectFlags  = message2.mHeader.mObjectFlags;
@@ -797,12 +797,12 @@ BLF_FASTCALL(BLF_get_period) {
     }
 
     // Time is always at column 0
-    const double* time_data = msgData.data.data();  // Start of flattened 2D array
-    size_t stride = msgData.num_signals;  // Number of columns
+    const double* time_data = msgData.data.data(); // Start of flattened 2D array
+    size_t        stride    = msgData.num_signals; // Number of columns
 
     // Get first and last timestamp
-    double first_time = time_data[0];  // First row, column 0
-    double last_time = time_data[(msgData.num_samples - 1) * stride];  // Last row, column 0
+    double first_time = time_data[0];                                  // First row, column 0
+    double last_time  = time_data[(msgData.num_samples - 1) * stride]; // Last row, column 0
 
     // Calculate average dt (in seconds)
     double dt = (last_time - first_time) / (msgData.num_samples - 1);
@@ -854,99 +854,98 @@ BLF_FASTCALL(BLF_get_message_data) {
 }
 
 static PyMethodDef BLF_methods[] = {
-    {   "get_message_names",  (PyCFunction)BLF_get_message_names,     METH_NOARGS,
-     "Get list of all message names"                                             },
-    {         "get_signal",          (PyCFunction)BLF_get_signal, METH_FASTCALL,
-     "Get signal data by message and signal name as numpy array"                 },
-    {        "get_signals",         (PyCFunction)BLF_get_signals, METH_FASTCALL,
-     "Get list of signal names for a message"                                    },
-    {  "get_message_count",   (PyCFunction)BLF_get_message_count, METH_FASTCALL,
-     "Get number of samples for a message"                                       },
-    {   "get_message_data",    (PyCFunction)BLF_get_message_data, METH_FASTCALL,
-     "Get entire message as 2D array (time + all signals)"                       },
-    {   "get_signal_units",    (PyCFunction)BLF_get_signal_units, METH_FASTCALL,
-     "Get all signal units as dictionary"                                        },
-    {    "get_signal_unit",     (PyCFunction)BLF_get_signal_unit, METH_FASTCALL,
-     "Get unit string for a signal"                                              },
-    { "get_signal_factors",  (PyCFunction)BLF_get_signal_factors, METH_FASTCALL,
-     "Get all signal factors as dictionary"                                      },
-    {  "get_signal_factor",   (PyCFunction)BLF_get_signal_factor, METH_FASTCALL,
-     "Get scaling factor for a signal"                                           },
-    { "get_signal_offsets",  (PyCFunction)BLF_get_signal_offsets, METH_FASTCALL,
-     "Get all signal offsets as dictionary"                                      },
-    {  "get_signal_offset",   (PyCFunction)BLF_get_signal_offset, METH_FASTCALL,
-     "Get scaling offset for a signal"                                           },
-    {         "get_period", (PyCFunction)BLF_get_period, METH_FASTCALL,
-     "Get sampling period for a message in milliseconds"                         },
-    {                 NULL,                                 NULL,             0, NULL}
+    { "get_message_names",  (PyCFunction)BLF_get_message_names,   METH_NOARGS,
+     "Get list of all message names"                                               },
+    {        "get_signal",         (PyCFunction)BLF_get_signal, METH_FASTCALL,
+     "Get signal data by message and signal name as numpy array"                   },
+    {       "get_signals",        (PyCFunction)BLF_get_signals, METH_FASTCALL,
+     "Get list of signal names for a message"                                      },
+    { "get_message_count",  (PyCFunction)BLF_get_message_count, METH_FASTCALL,
+     "Get number of samples for a message"                                         },
+    {  "get_message_data",   (PyCFunction)BLF_get_message_data, METH_FASTCALL,
+     "Get entire message as 2D array (time + all signals)"                         },
+    {  "get_signal_units",   (PyCFunction)BLF_get_signal_units, METH_FASTCALL,
+     "Get all signal units as dictionary"                                          },
+    {   "get_signal_unit",    (PyCFunction)BLF_get_signal_unit, METH_FASTCALL,
+     "Get unit string for a signal"                                                },
+    {"get_signal_factors", (PyCFunction)BLF_get_signal_factors, METH_FASTCALL,
+     "Get all signal factors as dictionary"                                        },
+    { "get_signal_factor",  (PyCFunction)BLF_get_signal_factor, METH_FASTCALL,
+     "Get scaling factor for a signal"                                             },
+    {"get_signal_offsets", (PyCFunction)BLF_get_signal_offsets, METH_FASTCALL,
+     "Get all signal offsets as dictionary"                                        },
+    { "get_signal_offset",  (PyCFunction)BLF_get_signal_offset, METH_FASTCALL,
+     "Get scaling offset for a signal"                                             },
+    {        "get_period",         (PyCFunction)BLF_get_period, METH_FASTCALL,
+     "Get sampling period for a message in milliseconds"                           },
+    {                NULL,                                NULL,             0, NULL}
 };
 
 // Type definition
 static PyTypeObject BLFType = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    "blf_python.BLF",                            /* tp_name */
-    sizeof(BLFObject),                           /* tp_basicsize */
-    0,                                           /* tp_itemsize */
-    (destructor)BLF_dealloc,                     /* tp_dealloc */
-    0,                                           /* tp_vectorcall_offset */
-    0,                                           /* tp_getattr */
-    0,                                           /* tp_setattr */
-    0,                                           /* tp_as_async */
-    0,                                           /* tp_repr */
-    0,                                           /* tp_as_number */
-    0,                                           /* tp_as_sequence */
-    0,                                           /* tp_as_mapping */
-    0,                                           /* tp_hash */
-    0,                                           /* tp_call */
-    0,                                           /* tp_str */
-    0,                                           /* tp_getattro */
-    0,                                           /* tp_setattro */
-    0,                                           /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,    /* tp_flags */
-    "BLF file reader with DBC decoding support", /* tp_doc */
-    0,                                           /* tp_traverse */
-    0,                                           /* tp_clear */
-    0,                                           /* tp_richcompare */
-    0,                                           /* tp_weaklistoffset */
-    0,                                           /* tp_iter */
-    0,                                           /* tp_iternext */
-    BLF_methods,                                 /* tp_methods */
-    0,                                           /* tp_members */
-    0,                                           /* tp_getset */
-    0,                                           /* tp_base */
-    0,                                           /* tp_dict */
-    0,                                           /* tp_descr_get */
-    0,                                           /* tp_descr_set */
-    0,                                           /* tp_dictoffset */
-    (initproc)BLF_init,                          /* tp_init */
-    0,                                           /* tp_alloc */
-    BLF_new,                                     /* tp_new */
-    0,                                           /* tp_free */
-    0,                                           /* tp_is_gc */
-    0,                                           /* tp_bases */
-    0,                                           /* tp_mro */
-    0,                                           /* tp_cache */
-    0,                                           /* tp_subclasses */
-    0,                                           /* tp_weaklist */
-    0,                                           /* tp_del */
-    0,                                           /* tp_version_tag */
-    0,                                           /* tp_finalize */
-    0,                                           /* tp_vectorcall */
-    0,                                           /* tp_watched */
-    0,                                           /* tp_versions_used */
+    PyVarObject_HEAD_INIT(NULL, 0) "blf_python.BLF", /* tp_name */
+    sizeof(BLFObject),                               /* tp_basicsize */
+    0,                                               /* tp_itemsize */
+    (destructor)BLF_dealloc,                         /* tp_dealloc */
+    0,                                               /* tp_vectorcall_offset */
+    0,                                               /* tp_getattr */
+    0,                                               /* tp_setattr */
+    0,                                               /* tp_as_async */
+    0,                                               /* tp_repr */
+    0,                                               /* tp_as_number */
+    0,                                               /* tp_as_sequence */
+    0,                                               /* tp_as_mapping */
+    0,                                               /* tp_hash */
+    0,                                               /* tp_call */
+    0,                                               /* tp_str */
+    0,                                               /* tp_getattro */
+    0,                                               /* tp_setattro */
+    0,                                               /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,        /* tp_flags */
+    "BLF file reader with DBC decoding support",     /* tp_doc */
+    0,                                               /* tp_traverse */
+    0,                                               /* tp_clear */
+    0,                                               /* tp_richcompare */
+    0,                                               /* tp_weaklistoffset */
+    0,                                               /* tp_iter */
+    0,                                               /* tp_iternext */
+    BLF_methods,                                     /* tp_methods */
+    0,                                               /* tp_members */
+    0,                                               /* tp_getset */
+    0,                                               /* tp_base */
+    0,                                               /* tp_dict */
+    0,                                               /* tp_descr_get */
+    0,                                               /* tp_descr_set */
+    0,                                               /* tp_dictoffset */
+    (initproc)BLF_init,                              /* tp_init */
+    0,                                               /* tp_alloc */
+    BLF_new,                                         /* tp_new */
+    0,                                               /* tp_free */
+    0,                                               /* tp_is_gc */
+    0,                                               /* tp_bases */
+    0,                                               /* tp_mro */
+    0,                                               /* tp_cache */
+    0,                                               /* tp_subclasses */
+    0,                                               /* tp_weaklist */
+    0,                                               /* tp_del */
+    0,                                               /* tp_version_tag */
+    0,                                               /* tp_finalize */
+    0,                                               /* tp_vectorcall */
+    0,                                               /* tp_watched */
+    0,                                               /* tp_versions_used */
 };
 
 // Module definition
 static PyModuleDef blfmodule = {
     PyModuleDef_HEAD_INIT,
-    "blf_python",                                     /* m_name */
-    "BLF file reader and decoder with DBC support",  /* m_doc */
-    -1,                                               /* m_size */
-    NULL,                                             /* m_methods */
-    NULL,                                             /* m_slots */
-    NULL,                                             /* m_traverse */
-    NULL,                                             /* m_clear */
-    NULL,                                             /* m_free */
+    "blf_python",                                   /* m_name */
+    "BLF file reader and decoder with DBC support", /* m_doc */
+    -1,                                             /* m_size */
+    NULL,                                           /* m_methods */
+    NULL,                                           /* m_slots */
+    NULL,                                           /* m_traverse */
+    NULL,                                           /* m_clear */
+    NULL,                                           /* m_free */
 };
 
 // Module initialization

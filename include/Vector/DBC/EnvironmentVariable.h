@@ -42,7 +42,7 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT EnvironmentVariable {
     /** Name */
-    std::string name {};
+    std::string name{};
 
     /** Type */
     enum class Type : char {
@@ -60,22 +60,22 @@ struct VECTOR_DBC_EXPORT EnvironmentVariable {
     };
 
     /** Type */
-    Type type { Type::Integer };
+    Type type{Type::Integer};
 
     /** Minimum Physical Value */
-    double minimum {};
+    double minimum{};
 
     /** Maximum Physical Value */
-    double maximum {};
+    double maximum{};
 
     /** Unit */
-    std::string unit {};
+    std::string unit{};
 
     /** Initial Value */
-    double initialValue {};
+    double initialValue{};
 
     /** Identifier */
-    uint32_t id {};
+    uint32_t id{};
 
     /** Access Type */
     enum class AccessType : uint16_t {
@@ -93,25 +93,25 @@ struct VECTOR_DBC_EXPORT EnvironmentVariable {
     };
 
     /** Access Type */
-    AccessType accessType { AccessType::Unrestricted };
+    AccessType accessType{AccessType::Unrestricted};
 
     /** Access Nodes */
-    std::set<std::string> accessNodes {};
+    std::set<std::string> accessNodes{};
 
     /** Value Descriptions (VAL) */
-    ValueDescriptions valueDescriptions {};
+    ValueDescriptions valueDescriptions{};
 
     /** Environment Variables Data (ENVVAR_DATA) */
-    uint32_t dataSize {};
+    uint32_t dataSize{};
 
     /** Comment (CM) */
-    std::string comment {};
+    std::string comment{};
 
     /** Attribute Values (BA) */
-    std::map<std::string, Attribute> attributeValues {};
+    std::map<std::string, Attribute> attributeValues{};
 };
 
-std::ostream & operator<<(std::ostream & os, const EnvironmentVariable & environmentVariable);
+std::ostream& operator<<(std::ostream& os, const EnvironmentVariable& environmentVariable);
 
-}
-}
+} // namespace DBC
+} // namespace Vector

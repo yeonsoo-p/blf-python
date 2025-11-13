@@ -39,5 +39,5 @@ enum class ValueType : char {
     Signed = '-'
 };
 
-}
-}
+} // namespace DBC
+} // namespace Vector

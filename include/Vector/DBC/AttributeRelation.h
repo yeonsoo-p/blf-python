@@ -38,16 +38,16 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT AttributeRelation : Attribute {
     /** Node Name */
-    std::string nodeName {};
+    std::string nodeName{};
 
     /** Environment Variable Name */
-    std::string environmentVariableName {};
+    std::string environmentVariableName{};
 
     /** Message Identifier */
-    uint32_t messageId {};
+    uint32_t messageId{};
 
     /** Signal Name */
-    std::string signalName {};
+    std::string signalName{};
 };
 
 /**
@@ -56,7 +56,7 @@ struct VECTOR_DBC_EXPORT AttributeRelation : Attribute {
  * @param[in] rhs Right Hand Side of operation
  * @return comparison result
  */
-bool operator<(const AttributeRelation & lhs, const AttributeRelation & rhs);
+bool operator<(const AttributeRelation& lhs, const AttributeRelation& rhs);
 
-}
-}
+} // namespace DBC
+} // namespace Vector

@@ -38,13 +38,13 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT ValueTable {
     /** Name */
-    std::string name {};
+    std::string name{};
 
     /** Value Descriptions */
-    ValueDescriptions valueDescriptions {};
+    ValueDescriptions valueDescriptions{};
 };
 
-std::ostream & operator<<(std::ostream & os, const ValueTable & valueTable);
+std::ostream& operator<<(std::ostream& os, const ValueTable& valueTable);
 
-}
-}
+} // namespace DBC
+} // namespace Vector

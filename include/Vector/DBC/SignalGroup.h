@@ -38,10 +38,10 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT SignalGroup {
     /** Message Identifier */
-    uint32_t messageId {};
+    uint32_t messageId{};
 
     /** Name */
-    std::string name {};
+    std::string name{};
 
     /**
      * Repetitions
@@ -50,13 +50,13 @@ struct VECTOR_DBC_EXPORT SignalGroup {
      *   According to Vector this value is obsolete and is not read by
      *   any Vector product any more. This value is always set to 1.
      */
-    uint32_t repetitions { 1 };
+    uint32_t repetitions{1};
 
     /** Signals */
-    std::set<std::string> signals {};
+    std::set<std::string> signals{};
 };
 
-std::ostream & operator<<(std::ostream & os, const SignalGroup & signalGroup);
+std::ostream& operator<<(std::ostream& os, const SignalGroup& signalGroup);
 
-}
-}
+} // namespace DBC
+} // namespace Vector

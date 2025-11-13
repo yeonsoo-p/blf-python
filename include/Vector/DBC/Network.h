@@ -51,40 +51,40 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT Network {
     /** successfully parsed */
-    bool successfullyParsed { false };
+    bool successfullyParsed{false};
 
     /** Version (VERSION) */
-    std::string version {};
+    std::string version{};
 
     /** New Symbols (NS) */
-    std::vector<std::string> newSymbols {};
+    std::vector<std::string> newSymbols{};
 
     /** Bit Timing (BS) */
-    BitTiming bitTiming {};
+    BitTiming bitTiming{};
 
     /** Nodes (BU) */
-    std::map<std::string, Node> nodes {};
+    std::map<std::string, Node> nodes{};
 
     /** Value Tables (VAL_TABLE) */
-    std::map<std::string, ValueTable> valueTables {};
+    std::map<std::string, ValueTable> valueTables{};
 
     /** Messages (BO) and Signals (SG) */
-    std::map<uint32_t, Message> messages {};
+    std::map<uint32_t, Message> messages{};
 
     /* Message Transmitters (BO_TX_BU) */
     // moved to Message (BO)
 
     /** Environment Variables (EV) */
-    std::map<std::string, EnvironmentVariable> environmentVariables {};
+    std::map<std::string, EnvironmentVariable> environmentVariables{};
 
     /* Environment Variables Data (ENVVAR_DATA) */
     // moved to Environment Variables (EV)
 
     /** Signal Types (SGTYPE, obsolete) */
-    std::map<std::string, SignalType> signalTypes {};
+    std::map<std::string, SignalType> signalTypes{};
 
     /** Comments (CM) */
-    std::string comment {}; // for network
+    std::string comment{}; // for network
     // moved to Node (BU) for nodes
     // moved to Message (BO) for messages
     // moved to Signal (SG) for signals
@@ -94,7 +94,7 @@ struct VECTOR_DBC_EXPORT Network {
      * Attribute Definitions (BA_DEF) and
      * Attribute Definitions for Relations (BA_DEF_REL)
      */
-    std::map<std::string, AttributeDefinition> attributeDefinitions {};
+    std::map<std::string, AttributeDefinition> attributeDefinitions{};
 
     /* Sigtype Attr List (?, obsolete) */
 
@@ -102,17 +102,17 @@ struct VECTOR_DBC_EXPORT Network {
      * Attribute Defaults (BA_DEF_DEF) and
      * Attribute Defaults for Relations (BA_DEF_DEF_REL)
      */
-    std::map<std::string, Attribute> attributeDefaults {};
+    std::map<std::string, Attribute> attributeDefaults{};
 
     /** Attribute Values (BA) */
-    std::map<std::string, Attribute> attributeValues {}; // for network
+    std::map<std::string, Attribute> attributeValues{}; // for network
     // moved to Node (BU) for nodes
     // moved to Message (BO) for messages
     // moved to Signal (SG) for signals
     // moved to Environment Variable (EV) for environment variables
 
     /** Attribute Values on Relations (BA_REF) */
-    std::map<std::string, AttributeRelation> attributeRelationValues {};
+    std::map<std::string, AttributeRelation> attributeRelationValues{};
 
     /* Value Descriptions (VAL) */
     // moved to Signals (BO) for signals
@@ -137,8 +137,8 @@ struct VECTOR_DBC_EXPORT Network {
     // moved to Signal (SG)
 };
 
-VECTOR_DBC_EXPORT std::ostream & operator<<(std::ostream & os, const Network & network);
-VECTOR_DBC_EXPORT std::istream & operator>>(std::istream & is, Network & network);
+VECTOR_DBC_EXPORT std::ostream& operator<<(std::ostream& os, const Network& network);
+VECTOR_DBC_EXPORT std::istream& operator>>(std::istream& is, Network& network);
 
-}
-}
+} // namespace DBC
+} // namespace Vector

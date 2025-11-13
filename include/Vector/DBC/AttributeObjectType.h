@@ -55,5 +55,5 @@ enum class AttributeObjectType {
     NodeMappedRxSignal
 };
 
-}
-}
+} // namespace DBC
+} // namespace Vector

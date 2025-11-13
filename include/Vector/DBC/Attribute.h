@@ -41,14 +41,14 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT Attribute {
     /** Name */
-    std::string name {};
+    std::string name{};
 
     /** Value Type */
-    AttributeObjectType objectType { AttributeObjectType::Network };
+    AttributeObjectType objectType{AttributeObjectType::Network};
 
     union {
         /** Integer Value of type AttributeValueType::Int */
-        int32_t integerValue {};
+        int32_t integerValue{};
 
         /** Hex Value of type AttributeValueType::Hex */
         int32_t hexValue;
@@ -63,8 +63,8 @@ struct VECTOR_DBC_EXPORT Attribute {
     };
 
     /** String Value of type AttributeValueType::String (used only for BA_DEF_DEF enums) */
-    std::string stringValue {};
+    std::string stringValue{};
 };
 
-}
-}
+} // namespace DBC
+} // namespace Vector

@@ -42,16 +42,16 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT AttributeDefinition {
     /** Name */
-    std::string name {};
+    std::string name{};
 
     /** Object Type */
-    AttributeObjectType objectType { AttributeObjectType::Network };
+    AttributeObjectType objectType{AttributeObjectType::Network};
 
     /** Value Type */
-    AttributeValueType valueType {};
+    AttributeValueType valueType{};
 };
 
-std::ostream & operator<<(std::ostream & os, const AttributeDefinition & attributeDefinition);
+std::ostream& operator<<(std::ostream& os, const AttributeDefinition& attributeDefinition);
 
-}
-}
+} // namespace DBC
+} // namespace Vector

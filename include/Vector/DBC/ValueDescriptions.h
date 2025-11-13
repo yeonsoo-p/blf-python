@@ -37,5 +37,5 @@ namespace DBC {
  */
 using ValueDescriptions = std::map<uint32_t, std::string>;
 
-}
-}
+} // namespace DBC
+} // namespace Vector

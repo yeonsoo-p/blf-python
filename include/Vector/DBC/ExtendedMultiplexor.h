@@ -38,14 +38,14 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT ExtendedMultiplexor {
     /** Switch Name */
-    std::string switchName {};
+    std::string switchName{};
 
     /** Value Range */
     using ValueRange = std::pair<uint32_t, uint32_t>;
 
     /** Value Range */
-    std::set<ValueRange> valueRanges {};
+    std::set<ValueRange> valueRanges{};
 };
 
-}
-}
+} // namespace DBC
+} // namespace Vector

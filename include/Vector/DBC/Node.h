@@ -38,14 +38,14 @@ namespace DBC {
  */
 struct VECTOR_DBC_EXPORT Node {
     /** Name */
-    std::string name {};
+    std::string name{};
 
     /** Comment (CM) */
-    std::string comment {};
+    std::string comment{};
 
     /** Attribute Values (BA) */
-    std::map<std::string, Attribute> attributeValues {};
+    std::map<std::string, Attribute> attributeValues{};
 };
 
-}
-}
+} // namespace DBC
+} // namespace Vector
