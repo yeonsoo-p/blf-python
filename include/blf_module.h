@@ -30,6 +30,67 @@ inline void hash_combine(std::size_t& seed, const T& v) {
     seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
+// Sanitize std::string to Python Unicode by skipping invalid UTF-8 sequences
+inline PyObject* sanitized_PyUnicode_FromString(const std::string& str) {
+    std::string sanitized;
+    sanitized.reserve(str.size());
+
+    for (size_t i = 0; i < str.size(); ) {
+        unsigned char c = str[i];
+
+        // ASCII (0x00-0x7F)
+        if (c <= 0x7F) {
+            sanitized += c;
+            i++;
+        }
+        // 2-byte UTF-8 (0xC0-0xDF)
+        else if ((c >= 0xC0 && c <= 0xDF) && i + 1 < str.size()) {
+            unsigned char c2 = str[i + 1];
+            if ((c2 & 0xC0) == 0x80) {  // Valid continuation byte
+                sanitized += c;
+                sanitized += c2;
+                i += 2;
+            } else {
+                i++;  // Skip invalid byte
+            }
+        }
+        // 3-byte UTF-8 (0xE0-0xEF)
+        else if ((c >= 0xE0 && c <= 0xEF) && i + 2 < str.size()) {
+            unsigned char c2 = str[i + 1];
+            unsigned char c3 = str[i + 2];
+            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) {  // Valid continuation bytes
+                sanitized += c;
+                sanitized += c2;
+                sanitized += c3;
+                i += 3;
+            } else {
+                i++;  // Skip invalid byte
+            }
+        }
+        // 4-byte UTF-8 (0xF0-0xF7)
+        else if ((c >= 0xF0 && c <= 0xF7) && i + 3 < str.size()) {
+            unsigned char c2 = str[i + 1];
+            unsigned char c3 = str[i + 2];
+            unsigned char c4 = str[i + 3];
+            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80 && (c4 & 0xC0) == 0x80) {  // Valid continuation bytes
+                sanitized += c;
+                sanitized += c2;
+                sanitized += c3;
+                sanitized += c4;
+                i += 4;
+            } else {
+                i++;  // Skip invalid byte
+            }
+        }
+        // Invalid byte - skip it
+        else {
+            i++;
+        }
+    }
+
+    return PyUnicode_FromString(sanitized.c_str());
+}
+
 // Helper to create a hash key from message ID and channel
 struct MessageChannelKey {
     uint32_t message_id;

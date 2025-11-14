@@ -339,9 +339,9 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             auto cacheIt = self->dbc_network_cache.find(cache_key);
             if (cacheIt != self->dbc_network_cache.end()) {
                 // Cache hit - look up message using the cached network index
-                size_t                network_idx     = cacheIt->second;
-                Vector::DBC::Network& cached_network  = self->networks[network_idx];
-                auto                  msgIt           = cached_network.messages.find(msgId);
+                size_t                network_idx    = cacheIt->second;
+                Vector::DBC::Network& cached_network = self->networks[network_idx];
+                auto                  msgIt          = cached_network.messages.find(msgId);
                 if (msgIt != cached_network.messages.end()) {
                     dbcMessage = &msgIt->second;
                 }
@@ -586,7 +586,7 @@ BLF_NOARGS(BLF_get_message_names) {
 
     size_t i = 0;
     for (const auto& msgPair : self->messages_data) {
-        PyObject* name = PyUnicode_FromString(msgPair.first.c_str());
+        PyObject* name = sanitized_PyUnicode_FromString(msgPair.first.c_str());
         if (name == NULL) {
             Py_DECREF(list);
             return NULL;
@@ -612,7 +612,7 @@ BLF_FASTCALL(BLF_get_signals) {
     BLF_NEW_LIST(list, msgData.signal_names.size());
 
     for (size_t i = 0; i < msgData.signal_names.size(); ++i) {
-        PyObject* name = PyUnicode_FromString(msgData.signal_names[i].c_str());
+        PyObject* name = sanitized_PyUnicode_FromString(msgData.signal_names[i].c_str());
         if (name == NULL) {
             Py_DECREF(list);
             return NULL;
@@ -649,8 +649,8 @@ BLF_FASTCALL(BLF_get_signal_units) {
     BLF_NEW_DICT(dict);
 
     for (const auto& metaPair : msgData.signal_metadata) {
-        PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
-        PyObject* val = PyUnicode_FromString(metaPair.second.unit.c_str());
+        PyObject* key = sanitized_PyUnicode_FromString(metaPair.first.c_str());
+        PyObject* val = sanitized_PyUnicode_FromString(metaPair.second.unit.c_str());
 
         if (key == NULL || val == NULL) {
             Py_XDECREF(key);
@@ -686,7 +686,7 @@ BLF_FASTCALL(BLF_get_signal_unit) {
     BLF_FIND_MESSAGE(msgData, message_name);
     BLF_FIND_SIGNAL(msgData, metadata, signal_name);
 
-    return PyUnicode_FromString(metadata.unit.c_str());
+    return sanitized_PyUnicode_FromString(metadata.unit.c_str());
 }
 
 // BLF.get_signal_factors(message_name) -> dict[str, float]
@@ -703,7 +703,7 @@ BLF_FASTCALL(BLF_get_signal_factors) {
     BLF_NEW_DICT(dict);
 
     for (const auto& metaPair : msgData.signal_metadata) {
-        PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
+        PyObject* key = sanitized_PyUnicode_FromString(metaPair.first.c_str());
         PyObject* val = PyFloat_FromDouble(metaPair.second.factor);
 
         if (key == NULL || val == NULL) {
@@ -757,7 +757,7 @@ BLF_FASTCALL(BLF_get_signal_offsets) {
     BLF_NEW_DICT(dict);
 
     for (const auto& metaPair : msgData.signal_metadata) {
-        PyObject* key = PyUnicode_FromString(metaPair.first.c_str());
+        PyObject* key = sanitized_PyUnicode_FromString(metaPair.first.c_str());
         PyObject* val = PyFloat_FromDouble(metaPair.second.offset);
 
         if (key == NULL || val == NULL) {
