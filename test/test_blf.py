@@ -1092,7 +1092,7 @@ def main() -> None:
     #   Multiple channels: [(1, Path("powertrain.dbc")), (2, Path("chassis.dbc"))]
     #   Wildcard: [(-1, Path("all_messages.dbc"))]
     channel_dbc_list = [
-        (-1, Path("example/RT3003_240223dbc.dbc")),
+        (1, Path("example/RT3003_240223dbc.dbc")),
     ]
 
     print("\n" + "=" * 60)
