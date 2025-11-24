@@ -1,4 +1,8 @@
 Phase 1: Critical Memory & Safety Issues (MUST FIX)
+Fix get_path_string() memory leak in src/blf_module.cpp:99-101
+Return ownership of PyObject to caller or copy string to prevent dangling pointer
+Make NumPy arrays read-only in src/blf_module.cpp:523-524 and line 838
+Remove NPY_ARRAY_WRITEABLE flag to prevent data corruption
 Fix cache pointer invalidation in src/blf_module.cpp:347
 Store indices instead of pointers to prevent dangling references after vector resize
 Phase 2: High Priority Bug Fixes
@@ -16,6 +20,7 @@ Add file size validation - Check file size before parsing to prevent DoS
 Improve timestamp flag handling - Add warnings for undefined states
 Add cache size limits in blf_python/blf.py:172 - Prevent unbounded memory growth
 Phase 4: Code Quality & Performance
+Refactor duplicate dictionary builders - Create template helpers for metadata access
 Extract magic constants - Define named constants for buffer sizes (8, 64, etc.)
 Break up BLF_init() - Split 362-line function into logical components
 Remove dead code - Remove unused functions/structs in tests and headers

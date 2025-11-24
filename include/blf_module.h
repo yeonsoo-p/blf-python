@@ -35,7 +35,7 @@ inline PyObject* sanitized_PyUnicode_FromString(const std::string& str) {
     std::string sanitized;
     sanitized.reserve(str.size());
 
-    for (size_t i = 0; i < str.size(); ) {
+    for (size_t i = 0; i < str.size();) {
         unsigned char c = str[i];
 
         // ASCII (0x00-0x7F)
@@ -46,25 +46,25 @@ inline PyObject* sanitized_PyUnicode_FromString(const std::string& str) {
         // 2-byte UTF-8 (0xC0-0xDF)
         else if ((c >= 0xC0 && c <= 0xDF) && i + 1 < str.size()) {
             unsigned char c2 = str[i + 1];
-            if ((c2 & 0xC0) == 0x80) {  // Valid continuation byte
+            if ((c2 & 0xC0) == 0x80) { // Valid continuation byte
                 sanitized += c;
                 sanitized += c2;
                 i += 2;
             } else {
-                i++;  // Skip invalid byte
+                i++; // Skip invalid byte
             }
         }
         // 3-byte UTF-8 (0xE0-0xEF)
         else if ((c >= 0xE0 && c <= 0xEF) && i + 2 < str.size()) {
             unsigned char c2 = str[i + 1];
             unsigned char c3 = str[i + 2];
-            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) {  // Valid continuation bytes
+            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) { // Valid continuation bytes
                 sanitized += c;
                 sanitized += c2;
                 sanitized += c3;
                 i += 3;
             } else {
-                i++;  // Skip invalid byte
+                i++; // Skip invalid byte
             }
         }
         // 4-byte UTF-8 (0xF0-0xF7)
@@ -72,14 +72,14 @@ inline PyObject* sanitized_PyUnicode_FromString(const std::string& str) {
             unsigned char c2 = str[i + 1];
             unsigned char c3 = str[i + 2];
             unsigned char c4 = str[i + 3];
-            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80 && (c4 & 0xC0) == 0x80) {  // Valid continuation bytes
+            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80 && (c4 & 0xC0) == 0x80) { // Valid continuation bytes
                 sanitized += c;
                 sanitized += c2;
                 sanitized += c3;
                 sanitized += c4;
                 i += 4;
             } else {
-                i++;  // Skip invalid byte
+                i++; // Skip invalid byte
             }
         }
         // Invalid byte - skip it
@@ -266,12 +266,12 @@ struct ChannelDBCMapping {
 // BLF Python object structure
 typedef struct {
     PyObject_HEAD;
-    std::unordered_map<std::string, MessageData>                                   messages_data;
-    std::unordered_map<MessageChannelKey, size_t, MessageChannelKeyHash>           dbc_network_cache; // Maps to network index instead of pointer
-    std::vector<Vector::DBC::Network>                                              networks;          // Store networks
-    std::vector<int>                                                               network_channels;  // Store which channel each network belongs to
-    int                                                                            initialized;
-    int                                                                            parsed;
+    std::unordered_map<std::string, MessageData>                                        messages_data;
+    std::unordered_map<MessageChannelKey, Vector::DBC::Network*, MessageChannelKeyHash> dbc_network_cache;
+    std::vector<Vector::DBC::Network>                                                   networks;         // Store networks
+    std::vector<int>                                                                    network_channels; // Store which channel each network belongs to
+    int                                                                                 initialized;
+    int                                                                                 parsed;
 } BLFObject;
 
 #endif // BLF_MODULE_H

@@ -232,7 +232,6 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
     int32_t             bSuccess = 1;
 
     while (bSuccess) {
-
         int peekResult = BLPeekObject(hFile, &base);
 
         if (!peekResult)
@@ -329,7 +328,6 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
         if (validMessage) {
 
             // Find matching message in DBC files using cache
-            // The cache maps (message_id, channel) -> network index (not pointer!)
             const Vector::DBC::Message* dbcMessage = nullptr;
 
             // Create cache key
@@ -338,11 +336,10 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
             // Check cache first
             auto cacheIt = self->dbc_network_cache.find(cache_key);
             if (cacheIt != self->dbc_network_cache.end()) {
-                // Cache hit - look up message using the cached network index
-                size_t                network_idx    = cacheIt->second;
-                Vector::DBC::Network& cached_network = self->networks[network_idx];
-                auto                  msgIt          = cached_network.messages.find(msgId);
-                if (msgIt != cached_network.messages.end()) {
+                // Cache hit - look up message using the cached network pointer
+                Vector::DBC::Network* cached_network = cacheIt->second;
+                auto                  msgIt          = cached_network->messages.find(msgId);
+                if (msgIt != cached_network->messages.end()) {
                     dbcMessage = &msgIt->second;
                 }
             } else {
@@ -360,8 +357,8 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     auto msgIt = network.messages.find(msgId);
                     if (msgIt != network.messages.end()) {
                         dbcMessage = &msgIt->second;
-                        // Cache the network INDEX (not pointer) for future messages on this channel
-                        self->dbc_network_cache[cache_key] = i;
+                        // Cache the network pointer for future messages on this channel
+                        self->dbc_network_cache[cache_key] = &network;
                         break;
                     }
                 }
@@ -382,26 +379,11 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     timestampSec = timestamp / 1e9;
                 }
 
-                // Get or create message data storage
-                std::string msgName = dbcMessage->name;
 
-                // Sanitize message name: check for null bytes and non-UTF8 characters
-                if (msgName.find('\0') != std::string::npos) {
-                    fprintf(stderr, "Warning: Message name '%s' (ID %u) contains null bytes, truncating\n",
-                            msgName.c_str(), msgId);
-                    msgName = msgName.substr(0, msgName.find('\0'));
-                }
-                // Validate UTF-8 by attempting to create Python string (will be done later anyway)
-                // For now, just warn if name is unusually long or contains control characters
-                if (msgName.length() > 255) {
-                    fprintf(stderr, "Warning: Message name is unusually long (%zu chars) for ID %u\n",
-                            msgName.length(), msgId);
-                }
-
-                auto& msgData_storage = tempMessagesData[msgName];
+                auto& msgData_storage = tempMessagesData[dbcMessage->name];
 
                 if (msgData_storage.name.empty()) {
-                    msgData_storage.name = msgName;
+                    msgData_storage.name = dbcMessage->name;
                     msgData_storage.id   = msgId;
                 }
 
@@ -411,14 +393,6 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                 // Decode all signals
                 for (const auto& sigPair : dbcMessage->signals) {
                     const Vector::DBC::Signal& signal = sigPair.second;
-
-                    // Sanitize signal name
-                    std::string signalName = signal.name;
-                    if (signalName.find('\0') != std::string::npos) {
-                        fprintf(stderr, "Warning: Signal name '%s' in message '%s' contains null bytes, truncating\n",
-                                signalName.c_str(), msgName.c_str());
-                        signalName = signalName.substr(0, signalName.find('\0'));
-                    }
 
                     // Extract raw value
                     uint64_t rawValue = extractRawValue(msgData, msgDlc, signal);
@@ -433,13 +407,13 @@ static int BLF_init(BLFObject* self, PyObject* args, PyObject* kwds) {
                     }
 
                     // Store scaled physical value
-                    auto& sigData = msgData_storage.signals[signalName];
+                    auto& sigData = msgData_storage.signals[signal.name];
                     if (sigData.name.empty()) {
-                        sigData.name = signalName;
+                        sigData.name = signal.name;
 
                         // Store metadata on first occurrence (use sanitized name)
-                        SignalMetadata& metadata = msgData_storage.signal_metadata[signalName];
-                        metadata.name            = signalName;
+                        SignalMetadata& metadata = msgData_storage.signal_metadata[signal.name];
+                        metadata.name            = signal.name;
                         metadata.unit            = signal.unit;
                         metadata.factor          = signal.factor;
                         metadata.offset          = signal.offset;

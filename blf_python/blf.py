@@ -70,7 +70,10 @@ class MessageProxy:
     def get_signal_units(self) -> dict[str, str]:
         """Get dictionary of signal name -> unit string."""
         if self._cached_units is None:
-            self._cached_units = self._blf.get_signal_units(self._message_name)
+            try:
+                self._cached_units = self._blf.get_signal_units(self._message_name)
+            except (TypeError, RuntimeError, ValueError) as e:
+                raise type(e)(f"Failed to get signal units for message '{self._message_name}': {e}") from e
         return self._cached_units
 
     def get_signal_unit(self, signal_name: str) -> str:
@@ -83,7 +86,10 @@ class MessageProxy:
     def get_signal_factors(self) -> dict[str, float]:
         """Get dictionary of signal name -> scaling factor."""
         if self._cached_factors is None:
-            self._cached_factors = self._blf.get_signal_factors(self._message_name)
+            try:
+                self._cached_factors = self._blf.get_signal_factors(self._message_name)
+            except (TypeError, RuntimeError, ValueError) as e:
+                raise type(e)(f"Failed to get signal factors for message '{self._message_name}': {e}") from e
         return self._cached_factors
 
     def get_signal_factor(self, signal_name: str) -> float:
@@ -96,7 +102,10 @@ class MessageProxy:
     def get_signal_offsets(self) -> dict[str, float]:
         """Get dictionary of signal name -> scaling offset."""
         if self._cached_offsets is None:
-            self._cached_offsets = self._blf.get_signal_offsets(self._message_name)
+            try:
+                self._cached_offsets = self._blf.get_signal_offsets(self._message_name)
+            except (TypeError, RuntimeError, ValueError) as e:
+                raise type(e)(f"Failed to get signal offsets for message '{self._message_name}': {e}") from e
         return self._cached_offsets
 
     def get_signal_offset(self, signal_name: str) -> float:
